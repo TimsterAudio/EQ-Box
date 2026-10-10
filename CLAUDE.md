@@ -26,4 +26,4 @@ cargo clippy --target x86_64-pc-windows-gnu   # Windows still compiles
 - Work on a feature branch. `main` always holds a working version.
 - Open a pull request when the user asks, or merge when they ask.
 - For every user-visible change, add a line under **Unreleased** in `CHANGELOG.md`.
-- For a release: move Unreleased into a dated version section, bump `version` in `Cargo.toml` and the version in `README.md`, then tag the merge commit `vX.Y.Z`.
+- For a release: move Unreleased into a section headed `## X.Y.Z – YYYY-MM-DD` (the release notes are taken from it), and bump `version` in `Cargo.toml` and the version in `README.md`. Merging that to `main` publishes the release: `.github/workflows/release.yml` creates the `vX.Y.Z` tag and release with the Linux and Windows packages. No manual tagging is needed.

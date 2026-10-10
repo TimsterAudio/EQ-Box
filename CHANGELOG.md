@@ -14,3 +14,4 @@ First version.
 - Audio on Windows: WASAPI (with loopback capture), and ASIO with the `asio` build feature.
 - Drone Box panel: black or silver, colour or pointer knobs, LED display, level meters and red readouts.
 - Remembers its settings between runs.
+- Downloads for Linux, Windows and Windows + ASIO on the GitHub Releases page.

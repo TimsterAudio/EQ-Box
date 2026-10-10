@@ -6,6 +6,13 @@
 
 It's a real desktop program written in Rust (egui for the panel). It isn't an HTML page in a browser.
 
+## Download
+
+Get the latest version from the [Releases page](https://github.com/TimsterAudio/EQ-Box/releases/latest):
+
+- **Linux:** `eq-box-…-linux-x86_64.tar.gz`. Extract it and run `./eq-box`. It needs PipeWire 0.3.53 or newer (Ubuntu 24.04, Fedora 40, Arch or later). On older systems, build it yourself (see [Building](#building)).
+- **Windows:** `eq-box-…-windows-x86_64.zip` (WASAPI), or `…-windows-x86_64-asio.zip` with ASIO support as well. Extract it and run `eq-box.exe`.
+
 ## What it does
 
 - **10 bands.** Each band can be a **bell** (peaking), **low shelf** or **high shelf** filter, with its own on/off key.
@@ -92,6 +99,8 @@ cargo build --release --features asio
 Before you hand out ASIO builds, check that the ASIO SDK licence you're using allows it. Steinberg licenses the SDK under its own agreement or under GPLv3.
 
 GitHub Actions builds Linux, Windows and Windows + ASIO on every push. The builds are attached to each run as artifacts.
+
+**Releases are automatic.** When `main` has a version in `Cargo.toml` that hasn't been released yet, the Release workflow builds the three packages and publishes them as release `vX.Y.Z`, with that version's section of `CHANGELOG.md` as the notes.
 
 ## Project layout
 
