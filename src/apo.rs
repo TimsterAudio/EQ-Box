@@ -1,5 +1,5 @@
-//! Equalizer APO preset files (the `Preamp:` / `Filter N:` text format that
-//! AutoEQ, Peace and Equalizer APO itself use).
+//! APO-format EQ preset files: the `Preamp:` / `Filter N:` text format that
+//! AutoEQ's `ParametricEQ.txt` and other EQ software use.
 
 use crate::dsp::{BandParams, FilterKind, NUM_BANDS, PREAMP_MAX_DB, PREAMP_MIN_DB};
 
@@ -216,7 +216,7 @@ fn parse_filter(rest: &str) -> FilterLine {
         return FilterLine::Invalid;
     };
     let q = q.unwrap_or(match (kind, slope_db) {
-        // Equalizer APO's fixed-slope shelves (6/12 dB per octave) are close
+        // The format's fixed-slope shelves (6/12 dB per octave) are close
         // to these Qs at moderate gain.
         (FilterKind::Peak, _) => 1.0,
         (_, Some(s)) if s <= 6.0 => 0.5,
@@ -253,9 +253,9 @@ pub fn bw_to_q(bw: f32) -> f32 {
     }
 }
 
-/// Write the panel as an Equalizer APO preset.
+/// Write the panel as an APO-format preset.
 pub fn export(bands: &[BandParams], preamp_db: f32) -> String {
-    let mut s = String::from("# EQ Box preset (Equalizer APO format)\n");
+    let mut s = String::from("# EQ Box preset (APO format)\n");
     s += &format!("Preamp: {preamp_db:.1} dB\n");
     for (i, b) in bands.iter().enumerate() {
         let t = match b.kind {

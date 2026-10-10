@@ -17,7 +17,7 @@ Get the latest version from the [Releases page](https://github.com/TimsterAudio/
 
 - **10 bands.** Each band can be a **bell** (peaking), **low shelf** or **high shelf** filter, with its own on/off key.
 - **Gain from +12 dB to −24 dB**, frequency from 20 Hz to 20 kHz, and **Q from 0.1 to 20**, plus a **preamp** (+12 / −24 dB) and a **bypass** for A/B checks.
-- **Loads Equalizer APO presets**, including AutoEQ's `ParametricEQ.txt` files. It reads `Preamp:` and `Filter:` lines with the `PK`, `LS`/`LSC` and `HS`/`HSC` types, `Fc`, `Gain`, `Q` or `BW Oct`, and `ON`/`OFF`. It **saves** presets in the same format.
+- **Loads APO-format EQ presets**, such as AutoEQ's `ParametricEQ.txt` files. It reads `Preamp:` and `Filter:` lines with the `PK`, `LS`/`LSC` and `HS`/`HSC` types, `Fc`, `Gain`, `Q` or `BW Oct`, and `ON`/`OFF`. It **saves** presets in the same format.
 - **Response graph:** each band's curve in its own colour, the overall response in red over them, and a live **spectrum analyser** of the output behind both. Drag a band's point to set its frequency and gain, and scroll over it to change Q.
 - **Audio systems:**
   - **Windows:** **WASAPI** (it can capture any output by loopback) and **ASIO** (an optional build feature).

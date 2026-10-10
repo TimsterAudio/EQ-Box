@@ -269,8 +269,8 @@ impl EqApp {
 
     fn load_preset(&mut self) {
         let mut dlg = rfd::FileDialog::new()
-            .set_title("Load an Equalizer APO preset")
-            .add_filter("Equalizer APO preset", &["txt", "cfg"])
+            .set_title("Load an APO-format EQ preset")
+            .add_filter("APO-format EQ preset", &["txt", "cfg"])
             .add_filter("All files", &["*"]);
         if let Some(d) = &self.s.last_dir {
             dlg = dlg.set_directory(d);
@@ -306,8 +306,8 @@ impl EqApp {
 
     fn save_preset(&mut self) {
         let mut dlg = rfd::FileDialog::new()
-            .set_title("Save as an Equalizer APO preset")
-            .add_filter("Equalizer APO preset", &["txt"])
+            .set_title("Save as an APO-format EQ preset")
+            .add_filter("APO-format EQ preset", &["txt"])
             .set_file_name(format!("{}.txt", self.s.preset_name));
         if let Some(d) = &self.s.last_dir {
             dlg = dlg.set_directory(d);

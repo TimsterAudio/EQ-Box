@@ -20,8 +20,8 @@
 
 | File | What it does |
 |---|---|
-| `dsp.rs` | Band parameters and ranges, and the RBJ-cookbook biquad designs (bell, and Q-form shelves to match Equalizer APO's `LSC`/`HSC`). It also has the magnitude-response maths for the graph, and `Equalizer`, the real-time processor. |
-| `apo.rs` | Parses and writes Equalizer APO presets. |
+| `dsp.rs` | Band parameters and ranges, and the RBJ-cookbook biquad designs (bell, and Q-form shelves to match the APO preset format's `LSC`/`HSC`). It also has the magnitude-response maths for the graph, and `Equalizer`, the real-time processor. |
+| `apo.rs` | Parses and writes APO-format EQ presets. |
 | `shared.rs` | Lock-free parameters (UI to audio), peak meters (audio to UI) and the analyser tap. |
 | `analyzer.rs` | An 8192-point FFT with a Hann window, fast attack and slow release, read at any frequency span. |
 | `audio/mod.rs` | The backend list, device lists, `start()` and `Processor`, which meters, equalises and feeds the analyser. |

@@ -4,11 +4,11 @@
 
 ## Goal
 
-EQ Box equalises everything Windows plays on the outputs you choose, with no virtual cable and no third-party software. This is how Equalizer APO works.
+EQ Box equalises everything Windows plays on the outputs you choose, with no virtual cable and no third-party software. This is how other EQ software does it.
 
 ## How it works
 
-Windows mixes every app's sound in its audio engine (the `audiodg.exe` process), then sends the result to the device. Each output can carry **Audio Processing Objects (APOs)**: small DLLs the engine loads and runs on the sound before the device gets it. Sound card drivers use them for their "enhancements". Equalizer APO installs its own.
+Windows mixes every app's sound in its audio engine (the `audiodg.exe` process), then sends the result to the device. Each output can carry **Audio Processing Objects (APOs)**: small DLLs the engine loads and runs on the sound before the device gets it. Sound card drivers use them for their "enhancements". Other EQ software installs its own the same way.
 
 ```
  apps ──► Windows audio engine (audiodg.exe) ──────────────────► speakers
@@ -34,7 +34,7 @@ Inside EQ Box, **System** gets a new choice: **Windows (system-wide)**. It has n
 
 **It covers** everything that plays through the normal Windows mixer: browsers, music and video players, games and calls.
 
-**It won't cover**, the same as Equalizer APO:
+**It won't cover**, the same as other EQ software:
 - Apps that take **exclusive control** of a device, such as some music players in exclusive or "bit-perfect" mode, and anything using ASIO. EQ Box's ASIO mode remains for those cases.
 - Devices with **"Audio enhancements" turned off** in Windows sound settings. Setup will check this and tell you.
 - After some **Windows or driver updates**, Windows can reset a device's effects. EQ Box will detect that its engine isn't running on a device it should be on, and offer **Repair**.
