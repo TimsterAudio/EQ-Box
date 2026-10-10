@@ -30,7 +30,11 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.v.outputs.version }}
+      # "true" only once the release exists *with* its downloads attached.
       exists: ${{ steps.v.outputs.exists }}
+      # create: no release yet. attach: a release was made by hand on
+      # GitHub without files, so keep it and add the packages to it.
+      mode: ${{ steps.v.outputs.mode }}
     steps:
       - uses: actions/checkout@v4
       - id: v
@@ -39,11 +43,18 @@ jobs:
         run: |
           ver=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           echo "version=$ver" >> "$GITHUB_OUTPUT"
-          if gh release view "v$ver" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "v$ver is already released; nothing to publish."
+          if assets=$(gh release view "v$ver" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length' 2>/dev/null); then
+            if [ "$assets" -gt 0 ]; then
+              echo "exists=true" >> "$GITHUB_OUTPUT"
+              echo "v$ver is already released with $assets file(s); nothing to publish."
+            else
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              echo "mode=attach" >> "$GITHUB_OUTPUT"
+              echo "v$ver exists without files; the packages will be attached to it."
+            fi
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "mode=create" >> "$GITHUB_OUTPUT"
           fi
 
   linux:
@@ -135,13 +146,18 @@ jobs:
           See the README for setting up audio on each system.
           EOF
           cat notes.md
-      - name: Create release
+      - name: Create the release, or attach to the existing one
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ver="${{ needs.version.outputs.version }}"
-          gh release create "v$ver" dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "EQ Box $ver" \
-            --notes-file notes.md
+          if [ "${{ needs.version.outputs.mode }}" = "attach" ]; then
+            # Keep the hand-made release's title and notes; just add the files.
+            gh release upload "v$ver" dist/* --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "v$ver" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "EQ Box $ver" \
+              --notes-file notes.md
+          fi

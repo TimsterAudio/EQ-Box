@@ -100,7 +100,7 @@ Before you hand out ASIO builds, check that the ASIO SDK licence you're using al
 
 GitHub Actions builds Linux, Windows and Windows + ASIO on every push. The builds are attached to each run as artifacts.
 
-**Releases are automatic.** When `main` has a version in `Cargo.toml` that hasn't been released yet, the Release workflow builds the three packages and publishes them as release `vX.Y.Z`, with that version's section of `CHANGELOG.md` as the notes.
+**Releases are automatic.** When `main` has a version in `Cargo.toml` that hasn't been released yet, the Release workflow builds the three packages and publishes them as release `vX.Y.Z`, with that version's section of `CHANGELOG.md` as the notes. If a release for that version was already made by hand on GitHub without any files, it keeps that release and attaches the packages to it.
 
 ## Project layout
 
