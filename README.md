@@ -1,2 +1,102 @@
-# EQ-Box
-Desktop Parametric EQ for Linux Pipewire and Windows WASAPI
+# EQ Box
+
+**Timster's Audio Works – EQ Box v0.1.0**: a native ten-band parametric equaliser for Windows and Linux, with the same Jupiter-style panel as Drone Box.
+
+![EQ Box with an AutoEQ preset loaded and pink noise playing](docs/screenshot.png)
+
+It's a real desktop program written in Rust (egui for the panel). It isn't an HTML page in a browser.
+
+## What it does
+
+- **10 bands.** Each band can be a **bell** (peaking), **low shelf** or **high shelf** filter, with its own on/off key.
+- **Gain from +12 dB to −24 dB**, frequency from 20 Hz to 20 kHz, and **Q from 0.1 to 20**, plus a **preamp** (+12 / −24 dB) and a **bypass** for A/B checks.
+- **Loads Equalizer APO presets**, including AutoEQ's `ParametricEQ.txt` files. It reads `Preamp:` and `Filter:` lines with the `PK`, `LS`/`LSC` and `HS`/`HSC` types, `Fc`, `Gain`, `Q` or `BW Oct`, and `ON`/`OFF`. It **saves** presets in the same format.
+- **Response graph:** each band's curve in its own colour, the overall response in red over them, and a live **spectrum analyser** of the output behind both. Drag a band's point to set its frequency and gain, and scroll over it to change Q.
+- **Audio systems:**
+  - **Windows:** **WASAPI** (it can capture any output by loopback) and **ASIO** (an optional build feature).
+  - **Linux:** a **native PipeWire sink**. EQ Box shows up as an output called "EQ Box", so any app can play into it. It also has PipeWire and ALSA device modes.
+- **Remembers everything:** bands, preset name, devices, panel and knob style, and whether audio was running.
+
+## Using it
+
+### Linux (PipeWire)
+
+1. Start EQ Box, leave **System** on **PipeWire sink**, and press **Run / Stop**.
+2. In your desktop's sound settings, choose **EQ Box** as the output. You can also route a single app to it with `pavucontrol`, `qpwgraph` or Helvum.
+3. EQ Box sends the equalised audio to **Output**: the default device, or one you pick.
+
+EQ Box never routes its own output back into itself, even when it is the default output, because the sink and its output share a PipeWire link group. To make it the default from a terminal, find EQ Box's id in `wpctl status`, then run `wpctl set-default <id>`.
+
+If you'd rather equalise a capture device, choose **PipeWire devices** or **ALSA** and pick an **Input** and an **Output**.
+
+### Windows (WASAPI)
+
+Windows has no built-in way for an app to sit in front of the speakers, so route your audio through a virtual cable:
+
+1. Install a virtual cable, such as [VB-CABLE](https://vb-audio.com/Cable/), and set **CABLE Input** as Windows' default output.
+2. In EQ Box, set **System** to **WASAPI**, **Input** to **CABLE Output** (or **Loopback: CABLE Input**), and **Output** to your real speakers or headphones.
+3. Press **Run / Stop**.
+
+The two devices must run at the same sample rate, which you set under *Sound settings › device › Advanced*. **Buffer** sets the cushion between the input and the output. If you hear crackles, raise it. If you need less delay, lower it.
+
+### Windows (ASIO)
+
+In an ASIO build, choose **ASIO** under **System**, then pick your interface as both **Input** and **Output**. Send the signal you want equalised into the interface's inputs, for example through a loopback or virtual channel in its mixer software. EQ Box plays the result to the interface's outputs.
+
+### Controls
+
+| | |
+|---|---|
+| Knobs and faders | Drag up or down (or left/right). Hold **Shift** for fine control. Scroll to step. Double-click to reset. With a control focused, the arrow keys, Page Up/Down and Home/End adjust it. |
+| Graph points | Drag to set frequency and gain (**Shift** for fine). Scroll for Q. Double-click for 0 dB. Right-click to switch the band on or off. |
+| Filter type | The **LO SH / BELL / HI SH** LED keys on each band. |
+| Keys | **Space**: bypass · **Ctrl+O**: load preset · **Ctrl+S**: save preset |
+| Presets | **Load** / **Save** keys, drop a preset file on the window, or pass one on the command line: `eq-box "HD 600 ParametricEQ.txt"`. |
+| Flat / Reset | **Flat** sets every gain and the preamp to 0 dB. **Reset** also restores the default band layout. |
+
+When a preset has more than ten filters, EQ Box loads the first ten. It skips filter types it doesn't have (such as low-pass or notch), and limits values that are outside the panel's ranges. The footer lists anything it changed.
+
+## Building
+
+You need [Rust](https://rustup.rs) (stable).
+
+**Linux:** install the PipeWire, ALSA and clang headers first (PipeWire 0.3.53 or newer):
+
+```sh
+# Debian / Ubuntu 24.04+
+sudo apt install libpipewire-0.3-dev libspa-0.2-dev libasound2-dev libclang-dev pkg-config
+# Fedora
+sudo dnf install pipewire-devel alsa-lib-devel clang-devel
+# Arch
+sudo pacman -S pipewire alsa-lib clang
+
+cargo build --release
+./target/release/eq-box
+```
+
+`packaging/linux/eq-box.desktop` is a launcher entry you can copy to `~/.local/share/applications/`.
+
+**Windows (WASAPI):**
+
+```sh
+cargo build --release
+target\release\eq-box.exe
+```
+
+**Windows with ASIO:** you also need [LLVM](https://github.com/llvm/llvm-project/releases), with `LIBCLANG_PATH` pointing at its `bin` folder. The build downloads Steinberg's ASIO SDK. To use a copy you already have, set `CPAL_ASIO_DIR` to it.
+
+```sh
+cargo build --release --features asio
+```
+
+Before you hand out ASIO builds, check that the ASIO SDK licence you're using allows it. Steinberg licenses the SDK under its own agreement or under GPLv3.
+
+GitHub Actions builds Linux, Windows and Windows + ASIO on every push. The builds are attached to each run as artifacts.
+
+## Project layout
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the parts fit together, and [docs/DESIGN.md](docs/DESIGN.md) for the panel rules.
+
+## Credits
+
+The fonts in `assets/fonts` are under the SIL Open Font License: Barlow Semi Condensed, Michroma, Share Tech Mono and Space Grotesk. Their licences are in the same folder.

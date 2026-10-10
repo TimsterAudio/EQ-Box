@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: Linux (PipeWire)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PipeWire and ALSA headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpipewire-0.3-dev libspa-0.2-dev libasound2-dev libclang-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eq-box-linux-x86_64
+          path: |
+            target/release/eq-box
+            packaging/linux/eq-box.desktop
+
+  windows:
+    name: Windows (${{ matrix.asio && 'WASAPI + ASIO' || 'WASAPI' }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        asio: [false, true]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: asio-${{ matrix.asio }}
+      - run: cargo clippy --all-targets -- -D warnings
+        if: ${{ !matrix.asio }}
+      - run: cargo test
+        if: ${{ !matrix.asio }}
+      # The asio-sys build script downloads Steinberg's ASIO SDK and uses the
+      # runner's preinstalled LLVM for bindgen.
+      - name: Build
+        shell: bash
+        run: |
+          if [ "${{ matrix.asio }}" = "true" ]; then
+            export LIBCLANG_PATH="C:/Program Files/LLVM/bin"
+            cargo build --release --features asio
+          else
+            cargo build --release
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eq-box-windows-x86_64${{ matrix.asio && '-asio' || '' }}
+          path: target/release/eq-box.exe
