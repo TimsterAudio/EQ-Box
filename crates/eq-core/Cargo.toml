@@ -1,0 +1,11 @@
+[package]
+name = "eq-core"
+version.workspace = true
+edition.workspace = true
+description = "EQ Box's filters, presets and settings, shared by the app and the Windows engine"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rtrb = "0.4"

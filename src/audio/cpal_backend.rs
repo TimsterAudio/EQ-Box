@@ -31,12 +31,12 @@ pub fn hosts() -> Vec<BackendInfo> {
         .collect()
 }
 
-fn host(name: &str) -> Result<cpal::Host, String> {
+pub(super) fn host(name: &str) -> Result<cpal::Host, String> {
     let id = HostId::from_str(name).map_err(|_| format!("Unknown audio system \"{name}\""))?;
     cpal::host_from_id(id).map_err(|e| format!("{name} isn't available: {e}"))
 }
 
-fn device_name(d: &cpal::Device) -> String {
+pub(super) fn device_name(d: &cpal::Device) -> String {
     d.description()
         .map(|d| d.name().to_string())
         .unwrap_or_else(|_| "Unnamed device".into())
@@ -85,7 +85,11 @@ pub fn devices(backend: &str) -> Result<DeviceLists, String> {
     Ok(lists)
 }
 
-fn find_device(host: &cpal::Host, id: Option<&str>, output: bool) -> Result<cpal::Device, String> {
+pub(super) fn find_device(
+    host: &cpal::Host,
+    id: Option<&str>,
+    output: bool,
+) -> Result<cpal::Device, String> {
     match id {
         Some(id) => {
             let parsed = cpal::DeviceId::from_str(id).map_err(|e| e.to_string())?;

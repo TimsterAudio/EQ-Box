@@ -349,6 +349,14 @@ impl Equalizer {
         self.channels
     }
 
+    /// Clear the filters' memory (after a gap or a seek), without
+    /// allocating.
+    pub fn reset(&mut self) {
+        for st in &mut self.state {
+            *st = [BiquadState::default(); NUM_BANDS];
+        }
+    }
+
     /// Process interleaved audio in place.
     pub fn process(&mut self, buf: &mut [f32], settings: &EqSettings) {
         let targets = settings

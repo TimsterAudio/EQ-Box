@@ -1,0 +1,174 @@
+<#
+.SYNOPSIS
+    Installs EQ Box's system-wide engine on one Windows output (test build).
+
+.DESCRIPTION
+    Copies eq_box_apo.dll to "C:\Program Files\EQ Box", registers it with
+    Windows, and adds it to the output you choose as an endpoint effect.
+    Windows' audio service then restarts, and everything that output plays
+    goes through EQ Box. Set the EQ in EQ Box with System set to
+    "Windows (system-wide)".
+
+    The device's effect settings are backed up first. remove-engine.ps1
+    puts every device back exactly as it was.
+
+    Run from an Administrator PowerShell, in the folder with the DLL:
+        powershell -ExecutionPolicy Bypass -File .\install-engine.ps1
+
+.PARAMETER DeviceId
+    The output's endpoint id, such as {0.0.0.00000000}.{guid}. Leave it out
+    to pick from a list.
+
+.PARAMETER Force
+    Install even if the output already has an endpoint effect from its
+    driver. That effect is backed up and comes back on removal, but is
+    switched off while EQ Box is installed.
+#>
+#Requires -RunAsAdministrator
+[CmdletBinding()]
+param(
+    [string]$DeviceId,
+    [switch]$Force
+)
+
+$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'engine-common.ps1')
+
+Write-Host ''
+Write-Host 'EQ Box: install the system-wide engine (test build)' -ForegroundColor Cyan
+Write-Host ''
+
+$dllSource = Join-Path $PSScriptRoot $DllName
+if (-not (Test-Path $dllSource)) {
+    throw "Can't find $DllName next to this script ($PSScriptRoot)."
+}
+
+# --- Pick the output ------------------------------------------------------
+$devices = @(Get-RenderDevices | Where-Object Active)
+if ($devices.Count -eq 0) { throw 'No active playback devices found.' }
+
+if (-not $DeviceId) {
+    Write-Host 'Playback devices:'
+    for ($i = 0; $i -lt $devices.Count; $i++) {
+        $d = $devices[$i]
+        $mark = if ($d.HasEqBox) { '  (EQ Box installed)' } else { '' }
+        Write-Host ("  [{0}] {1}{2}" -f ($i + 1), $d.Label, $mark)
+    }
+    $choice = Read-Host "Which one gets EQ Box? (1-$($devices.Count))"
+    $n = 0
+    if (-not [int]::TryParse($choice, [ref]$n) -or $n -lt 1 -or $n -gt $devices.Count) {
+        throw 'No device chosen.'
+    }
+    $device = $devices[$n - 1]
+} else {
+    $device = $devices | Where-Object Id -eq $DeviceId
+    if (-not $device) { throw "No active playback device with id $DeviceId." }
+}
+Write-Host ''
+Write-Host "Device: $($device.Label)"
+
+if ($device.EnhancementsOff) {
+    Write-Warning ('"Audio enhancements" are turned off for this device, so Windows will skip EQ Box. ' +
+        'Turn them on in Settings > System > Sound > (device) > Audio enhancements.')
+}
+
+$existing = $device.EndpointEffect
+if ($existing -and $existing -ne $ClsidText -and -not $Force) {
+    throw ("This device already has an endpoint effect from its driver ($existing). " +
+        'Keeping driver effects alongside EQ Box comes in a later test step. ' +
+        'Try another device, or run again with -Force to replace it while EQ Box is installed (it is backed up and restored on removal).')
+}
+
+# --- Files ----------------------------------------------------------------
+New-Item -ItemType Directory -Force -Path $InstallDir, $BackupDir | Out-Null
+# Only administrators may change the install folder (backups live here).
+icacls $InstallDir /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' '*S-1-5-19:(OI)(CI)RX' | Out-Null
+
+$dllTarget = Join-Path $InstallDir $DllName
+Write-Host 'Stopping Windows audio to copy the engine...'
+Stop-Service -Name audiosrv -Force
+try {
+    Copy-Item -Force $dllSource $dllTarget
+} finally {
+    Start-Service -Name audiosrv
+}
+
+# The settings file: EQ Box (any user) writes it, the audio engine
+# (LOCAL SERVICE) reads it.
+New-Item -ItemType Directory -Force -Path $SettingsDir | Out-Null
+icacls $SettingsDir /grant '*S-1-5-32-545:(OI)(CI)M' '*S-1-5-19:(OI)(CI)RX' | Out-Null
+
+# --- Backups (only the first time, so a reinstall never overwrites them) --
+$backup = Join-Path $BackupDir "$($device.Guid).json"
+if (-not (Test-Path -LiteralPath $backup)) {
+    $fx = Join-Path $device.Key 'FxProperties'
+    $saved = [ordered]@{
+        DeviceId    = $device.Id
+        Label       = $device.Label
+        FxExisted   = [bool](Test-Path -LiteralPath $fx)
+        Values      = @{}
+    }
+    if ($saved.FxExisted) {
+        $props = Get-Item -LiteralPath $fx
+        foreach ($name in @($PkeyEfx, $PkeyEfxModes)) {
+            $v = $props.GetValue($name, $null, 'DoNotExpandEnvironmentNames')
+            if ($null -ne $v) {
+                $saved.Values[$name] = @{ Kind = $props.GetValueKind($name).ToString(); Data = $v }
+            }
+        }
+    }
+    $saved | ConvertTo-Json -Depth 5 | Set-Content -Path $backup -Encoding UTF8
+}
+$globalBackup = Join-Path $BackupDir 'global.json'
+if (-not (Test-Path $globalBackup)) {
+    $audioKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Audio'
+    $prev = (Get-ItemProperty -LiteralPath $audioKey -ErrorAction SilentlyContinue).DisableProtectedAudioDG
+    @{ DisableProtectedAudioDG = $prev } | ConvertTo-Json | Set-Content -Path $globalBackup -Encoding UTF8
+}
+
+# --- Registry -------------------------------------------------------------
+Write-Host 'Registering the engine...'
+$fxKey = "$($device.Key)\FxProperties"
+Invoke-AsSystem @"
+`$ErrorActionPreference = 'Stop'
+# COM class
+`$c = 'HKLM:\SOFTWARE\Classes\CLSID\$ClsidText'
+New-Item -Force -Path `$c | Out-Null
+Set-Item -Path `$c -Value 'EQ Box'
+New-Item -Force -Path "`$c\InprocServer32" | Out-Null
+Set-Item -Path "`$c\InprocServer32" -Value '$dllTarget'
+New-ItemProperty -Force -Path "`$c\InprocServer32" -Name ThreadingModel -Value 'Both' -PropertyType String | Out-Null
+
+# Audio engine registration
+`$a = 'HKLM:\SOFTWARE\Classes\AudioEngine\AudioProcessingObjects\$ClsidText'
+New-Item -Force -Path `$a | Out-Null
+`$s = @{ FriendlyName = 'EQ Box'; Copyright = "Timster's Audio Works"; APOInterface0 = '$IidApoText' }
+foreach (`$k in `$s.Keys) { New-ItemProperty -Force -Path `$a -Name `$k -Value `$s[`$k] -PropertyType String | Out-Null }
+# MaxInstances -1 is stored as the DWORD 0xFFFFFFFF (no limit).
+`$d = @{ MajorVersion = 0; MinorVersion = 1; Flags = 15; MinInputConnections = 1; MaxInputConnections = 1;
+        MinOutputConnections = 1; MaxOutputConnections = 1; MaxInstances = -1; NumAPOInterfaces = 1 }
+foreach (`$k in `$d.Keys) { New-ItemProperty -Force -Path `$a -Name `$k -Value ([int]`$d[`$k]) -PropertyType DWord | Out-Null }
+
+# The device: EQ Box as its endpoint effect, in the default processing mode
+if (-not (Test-Path -LiteralPath '$fxKey')) { New-Item -Force -Path '$fxKey' | Out-Null }
+New-ItemProperty -Force -LiteralPath '$fxKey' -Name '$PkeyEfx' -Value '$ClsidText' -PropertyType String | Out-Null
+New-ItemProperty -Force -LiteralPath '$fxKey' -Name '$PkeyEfxModes' -Value @('$ModeDefault') -PropertyType MultiString | Out-Null
+
+# Let the audio engine load effects that aren't Microsoft-signed
+`$audio = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Audio'
+if (-not (Test-Path `$audio)) { New-Item -Force -Path `$audio | Out-Null }
+New-ItemProperty -Force -Path `$audio -Name DisableProtectedAudioDG -Value 1 -PropertyType DWord | Out-Null
+"@
+
+Write-Host 'Restarting Windows audio...'
+Restart-Service -Name audiosrv -Force
+
+Write-Host ''
+Write-Host "Done. EQ Box is on: $($device.Label)" -ForegroundColor Green
+Write-Host ''
+Write-Host 'Next:'
+Write-Host '  1. Open EQ Box, set System to "Windows (system-wide)", and press Run / Stop.'
+Write-Host '  2. Play music in any app on that device and move the EQ.'
+Write-Host ''
+Write-Host 'To undo: run remove-engine.ps1 from an Administrator PowerShell.'
+Write-Host 'If a device goes silent: Settings > System > Sound > (device) > Audio enhancements: Off bypasses EQ Box at once.'

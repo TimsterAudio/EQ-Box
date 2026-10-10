@@ -1,6 +1,6 @@
 # Plan: system-wide EQ on Windows (EQ Box APO)
 
-**Status:** proposal, waiting for the go-ahead. Nothing here is built yet.
+**Status:** steps 1 and 2 are built, along with the core of step 3: the app mode and live settings. Waiting on the first test on a real Windows machine.
 
 ## Goal
 
