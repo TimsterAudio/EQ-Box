@@ -230,8 +230,8 @@ fn run(
             let bytes = &bytes[offset.min(end)..end];
             let n = (bytes.len() / STRIDE * CHANNELS).min(data.scratch.len());
             let buf = &mut data.scratch[..n];
-            for (s, b) in buf.iter_mut().zip(bytes.chunks_exact(4)) {
-                *s = f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+            for (s, b) in buf.iter_mut().zip(bytes.as_chunks::<4>().0) {
+                *s = f32::from_le_bytes(*b);
             }
             data.proc.run(buf);
             if data.ring.slots() < n {
@@ -277,7 +277,12 @@ fn run(
                     c.commit_all();
                 }
             }
-            for (i, b) in bytes[..want * 4].chunks_exact_mut(4).enumerate() {
+            for (i, b) in bytes[..want * 4]
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .enumerate()
+            {
                 let v = if data.filling {
                     0.0
                 } else {
