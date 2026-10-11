@@ -123,10 +123,14 @@ try {
     Start-Service -Name audiosrv
 }
 
-# The settings file: EQ Box (any user) writes it, the audio engine
-# (LOCAL SERVICE) reads it and writes engine-status.txt next to it.
+# The settings file: EQ Box (any user) writes it, the audio engine reads
+# it and writes engine-status.txt next to it. The audio engine runs as
+# LOCAL SERVICE with a restricted token, so its restricted identities
+# (RESTRICTED, WRITE RESTRICTED and the AudioSrv service) need access too.
 New-Item -ItemType Directory -Force -Path $SettingsDir | Out-Null
-icacls $SettingsDir /grant '*S-1-5-32-545:(OI)(CI)M' '*S-1-5-19:(OI)(CI)M' | Out-Null
+icacls $SettingsDir /grant '*S-1-5-32-545:(OI)(CI)M' '*S-1-5-19:(OI)(CI)M' '*S-1-5-12:(OI)(CI)M' '*S-1-5-33:(OI)(CI)M' /T | Out-Null
+# Separate call: if this name didn't resolve it would undo the grants above.
+icacls $SettingsDir /grant 'NT SERVICE\AudioSrv:(OI)(CI)M' /T 2>&1 | Out-Null
 
 # --- Backups (only the first time, so a reinstall never overwrites them) --
 $backup = Join-Path $BackupDir "$($device.Guid).json"

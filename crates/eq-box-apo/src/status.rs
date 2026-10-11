@@ -7,6 +7,7 @@
 use eq_core::shared::Shared;
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering::Relaxed};
+use std::sync::Mutex;
 
 pub const FILE_NAME: &str = "engine-status.txt";
 
@@ -19,7 +20,18 @@ pub static BUFFERS: AtomicU64 = AtomicU64::new(0);
 pub static SILENT_BUFFERS: AtomicU64 = AtomicU64::new(0);
 pub static SETTINGS_READS: AtomicU64 = AtomicU64::new(0);
 pub static SETTINGS_UNREADABLE: AtomicU64 = AtomicU64::new(0);
+pub static FORMAT_QUERIES: AtomicU32 = AtomicU32::new(0);
+pub static LOCK_FAILURES: AtomicU32 = AtomicU32::new(0);
 pub static FORMATS_REFUSED: AtomicU32 = AtomicU32::new(0);
+/// Why the settings file last failed to read (settings thread only).
+pub static LAST_READ_ERROR: Mutex<String> = Mutex::new(String::new());
+
+pub fn set_read_error(e: &str) {
+    if let Ok(mut s) = LAST_READ_ERROR.lock() {
+        s.clear();
+        s.push_str(e);
+    }
+}
 /// The last refused format: (bits << 16) | (container bytes << 8) | float.
 pub static LAST_REFUSED: AtomicU32 = AtomicU32::new(0);
 
@@ -57,8 +69,17 @@ pub fn report(shared: &Shared, settings_path: &std::path::Path) -> String {
          settings file: {path}\r\n\
          settings reads: {reads}   unreadable: {bad}\r\n\
          current EQ:{bands}   preamp {pre:+.1} dB   bypass {bypass}\r\n\
-         formats refused: {nref} (last: {bits}-bit in {cont}-byte container, float {float})\r\n",
+         last settings error: {err}\r\n\
+         format queries: {queries}   formats refused: {nref} (last: {bits}-bit in {cont}-byte container, float {float})\r\n\
+         lock failures: {lockfail}\r\n\
+         running as: {user}   PROGRAMDATA: {pd}   temp: {temp}\r\n",
         pid = std::process::id(),
+        err = LAST_READ_ERROR.lock().map(|s| if s.is_empty() { "none".to_string() } else { s.clone() }).unwrap_or_default(),
+        queries = FORMAT_QUERIES.load(Relaxed),
+        lockfail = LOCK_FAILURES.load(Relaxed),
+        user = std::env::var("USERNAME").unwrap_or_else(|_| "?".into()),
+        pd = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "(not set)".into()),
+        temp = std::env::temp_dir().display(),
         created = CREATED.load(Relaxed),
         init = INITIALIZED.load(Relaxed),
         locked = LOCKED.load(Relaxed),

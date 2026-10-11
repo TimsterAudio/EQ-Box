@@ -82,10 +82,20 @@ if (Test-Path -LiteralPath $settings) {
 icacls $SettingsDir
 
 Section 'Engine status (written by the engine itself)'
-$status = Join-Path $SettingsDir 'engine-status.txt'
-if (Test-Path -LiteralPath $status) {
-    Write-Host ("Last written: {0} (now {1})" -f (Get-Item -LiteralPath $status).LastWriteTime, (Get-Date))
-    Get-Content -LiteralPath $status
-} else {
-    Write-Host 'No status file: Windows has not run the engine since this build was installed.'
+# Next to the settings, or (if Windows refused that) in the audio engine's
+# own temp folder.
+$found = $false
+foreach ($status in @(
+        (Join-Path $SettingsDir 'engine-status.txt'),
+        (Join-Path $env:windir 'ServiceProfiles\LocalService\AppData\Local\Temp\engine-status.txt'))) {
+    if (Test-Path -LiteralPath $status) {
+        $found = $true
+        Write-Host ("{0}" -f $status)
+        Write-Host ("Last written: {0} (now {1})" -f (Get-Item -LiteralPath $status).LastWriteTime, (Get-Date))
+        Get-Content -LiteralPath $status
+        Write-Host ''
+    }
+}
+if (-not $found) {
+    Write-Host 'No status file in either place: the engine has not been created since this build was installed.'
 }

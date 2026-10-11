@@ -74,7 +74,13 @@ pub fn parse(text: &str) -> Option<EqSettings> {
 }
 
 pub fn read(path: &Path) -> Option<EqSettings> {
-    parse(&std::fs::read_to_string(path).ok()?)
+    read_checked(path).ok()
+}
+
+/// Like [`read`], but says why it failed (for the engine's status report).
+pub fn read_checked(path: &Path) -> Result<EqSettings, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    parse(&text).ok_or_else(|| "not a valid settings file (or half-written)".to_string())
 }
 
 /// Write via a temporary file and a rename, so the engine never reads a

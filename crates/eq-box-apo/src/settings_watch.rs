@@ -21,13 +21,14 @@ pub fn shared() -> Arc<Shared> {
     SHARED
         .get_or_init(|| {
             let path = engine_settings::default_path();
-            let initial = match engine_settings::read(&path) {
-                Some(s) => {
+            let initial = match engine_settings::read_checked(&path) {
+                Ok(s) => {
                     status::SETTINGS_READS.fetch_add(1, Relaxed);
                     s
                 }
-                None => {
+                Err(e) => {
                     status::SETTINGS_UNREADABLE.fetch_add(1, Relaxed);
+                    status::set_read_error(&e);
                     EqSettings::default()
                 }
             };
@@ -51,8 +52,15 @@ fn watch(path: std::path::PathBuf, shared: Arc<Shared>) {
         std::thread::sleep(POLL);
         ticks += 1;
         if ticks.is_multiple_of(STATUS_EVERY) {
-            // Best effort: diagnostics must never disturb the audio.
-            let _ = std::fs::write(&status_path, status::report(&shared, &path));
+            // Best effort: diagnostics must never disturb the audio. If the
+            // settings folder refuses the write, fall back to this
+            // process's own temp folder.
+            let report = status::report(&shared, &path);
+            if let Err(e) = std::fs::write(&status_path, &report) {
+                let fallback = std::env::temp_dir().join(status::FILE_NAME);
+                let note = format!("could not write {}: {e}\r\n", status_path.display());
+                let _ = std::fs::write(fallback, report + &note);
+            }
         }
         let now = modified(&path);
         if now == seen {
@@ -60,16 +68,21 @@ fn watch(path: std::path::PathBuf, shared: Arc<Shared>) {
         }
         // A half-written or unreadable file is skipped and retried on the
         // next tick, keeping the current settings meanwhile.
-        if let Some(s) = engine_settings::read(&path) {
-            shared.store(&s);
-            status::SETTINGS_READS.fetch_add(1, Relaxed);
-            seen = now;
-        } else if now.is_none() {
-            // The file was deleted: go flat rather than keep a stale EQ.
-            shared.store(&EqSettings::default());
-            seen = now;
-        } else {
-            status::SETTINGS_UNREADABLE.fetch_add(1, Relaxed);
+        match engine_settings::read_checked(&path) {
+            Ok(s) => {
+                shared.store(&s);
+                status::SETTINGS_READS.fetch_add(1, Relaxed);
+                seen = now;
+            }
+            Err(_) if now.is_none() => {
+                // The file was deleted: go flat rather than keep a stale EQ.
+                shared.store(&EqSettings::default());
+                seen = now;
+            }
+            Err(e) => {
+                status::SETTINGS_UNREADABLE.fetch_add(1, Relaxed);
+                status::set_read_error(&e);
+            }
         }
     }
 }

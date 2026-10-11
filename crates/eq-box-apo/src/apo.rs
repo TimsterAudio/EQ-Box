@@ -125,6 +125,7 @@ fn check_format(
     opposite: Ref<IAudioMediaType>,
     requested: Ref<IAudioMediaType>,
 ) -> Result<IAudioMediaType> {
+    status::FORMAT_QUERIES.fetch_add(1, Relaxed);
     let req = requested.ok()?;
     let f = float_format(req)?;
     if let Some(opp) = opposite.as_ref() {
@@ -225,41 +226,48 @@ impl IAudioProcessingObjectConfiguration_Impl for EqBoxApo_Impl {
         u32numoutputconnections: u32,
         ppoutputconnections: *const *const APO_CONNECTION_DESCRIPTOR,
     ) -> Result<()> {
-        if u32numinputconnections != 1 || u32numoutputconnections != 1 {
-            return Err(APOERR_NUM_CONNECTIONS_INVALID.into());
-        }
-        if ppinputconnections.is_null() || ppoutputconnections.is_null() {
-            return Err(E_POINTER.into());
-        }
-        let (input, output) = unsafe {
-            let i = *ppinputconnections;
-            let o = *ppoutputconnections;
-            if i.is_null() || o.is_null() {
+        // Counted, so the status report shows if Windows can't start us.
+        let result = (|| -> Result<()> {
+            if u32numinputconnections != 1 || u32numoutputconnections != 1 {
+                return Err(APOERR_NUM_CONNECTIONS_INVALID.into());
+            }
+            if ppinputconnections.is_null() || ppoutputconnections.is_null() {
                 return Err(E_POINTER.into());
             }
-            (&*i, &*o)
-        };
-        let in_fmt = float_format(input.pFormat.as_ref().ok_or(Error::from(E_INVALIDARG))?)?;
-        let out_fmt = float_format(output.pFormat.as_ref().ok_or(Error::from(E_INVALIDARG))?)?;
-        if in_fmt != out_fmt {
-            return Err(APOERR_INVALID_CONNECTION_FORMAT.into());
-        }
+            let (input, output) = unsafe {
+                let i = *ppinputconnections;
+                let o = *ppoutputconnections;
+                if i.is_null() || o.is_null() {
+                    return Err(E_POINTER.into());
+                }
+                (&*i, &*o)
+            };
+            let in_fmt = float_format(input.pFormat.as_ref().ok_or(Error::from(E_INVALIDARG))?)?;
+            let out_fmt = float_format(output.pFormat.as_ref().ok_or(Error::from(E_INVALIDARG))?)?;
+            if in_fmt != out_fmt {
+                return Err(APOERR_INVALID_CONNECTION_FORMAT.into());
+            }
 
-        let mut st = self.state();
-        if !st.initialized {
-            return Err(APOERR_NOT_INITIALIZED.into());
+            let mut st = self.state();
+            if !st.initialized {
+                return Err(APOERR_NOT_INITIALIZED.into());
+            }
+            if st.locked {
+                return Err(APOERR_APO_LOCKED.into());
+            }
+            // Allocating here is fine: this isn't the real-time thread.
+            st.eq = Some(Equalizer::new(in_fmt.rate as f64, in_fmt.channels as usize));
+            st.format = Some(in_fmt);
+            st.locked = true;
+            status::LOCKED.fetch_add(1, Relaxed);
+            status::RATE.store(in_fmt.rate as u32, Relaxed);
+            status::CHANNELS.store(in_fmt.channels, Relaxed);
+            Ok(())
+        })();
+        if result.is_err() {
+            status::LOCK_FAILURES.fetch_add(1, Relaxed);
         }
-        if st.locked {
-            return Err(APOERR_APO_LOCKED.into());
-        }
-        // Allocating here is fine: this isn't the real-time thread.
-        st.eq = Some(Equalizer::new(in_fmt.rate as f64, in_fmt.channels as usize));
-        st.format = Some(in_fmt);
-        st.locked = true;
-        status::LOCKED.fetch_add(1, Relaxed);
-        status::RATE.store(in_fmt.rate as u32, Relaxed);
-        status::CHANNELS.store(in_fmt.channels, Relaxed);
-        Ok(())
+        result
     }
 
     fn UnlockForProcess(&self) -> Result<()> {
