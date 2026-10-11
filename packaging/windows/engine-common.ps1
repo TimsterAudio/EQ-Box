@@ -44,6 +44,7 @@ function Get-RenderDevices {
             Id              = "{0.0.0.00000000}.$guid"
             Key             = "$RenderRoot\$guid"
             Label           = $label
+            State           = $state
             Active          = (($state -band 0x1) -ne 0)
             EnhancementsOff = $sysFxOff
             EndpointEffect  = $efx

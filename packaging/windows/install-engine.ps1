@@ -32,6 +32,17 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# A 32-bit PowerShell sees a redirected copy of the registry (no devices),
+# so rerun this script in the 64-bit one.
+if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
+    $ps64 = Join-Path $env:windir 'sysnative\WindowsPowerShell\v1.0\powershell.exe'
+    $relaunch = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
+    if ($DeviceId) { $relaunch += @('-DeviceId', $DeviceId) }
+    if ($Force) { $relaunch += '-Force' }
+    & $ps64 @relaunch
+    exit $LASTEXITCODE
+}
 . (Join-Path $PSScriptRoot 'engine-common.ps1')
 
 Write-Host ''
@@ -45,7 +56,24 @@ if (-not (Test-Path $dllSource)) {
 
 # --- Pick the output ------------------------------------------------------
 $devices = @(Get-RenderDevices | Where-Object Active)
-if ($devices.Count -eq 0) { throw 'No active playback devices found.' }
+if ($devices.Count -eq 0) {
+    # Usually Windows audio isn't running: start it and look again.
+    $svc = Get-Service -Name audiosrv, AudioEndpointBuilder
+    if ($svc | Where-Object Status -ne 'Running') {
+        Write-Host 'Windows audio is not running; starting it...'
+        Start-Service -Name AudioEndpointBuilder, audiosrv
+        Start-Sleep -Seconds 2
+        $devices = @(Get-RenderDevices | Where-Object Active)
+    }
+}
+if ($devices.Count -eq 0) {
+    Write-Host ''
+    Write-Host 'No active playback devices. What this script can see:' -ForegroundColor Yellow
+    Write-Host ("  64-bit PowerShell: {0}" -f [Environment]::Is64BitProcess)
+    Get-Service -Name audiosrv, AudioEndpointBuilder | ForEach-Object { Write-Host ("  Service {0}: {1}" -f $_.Name, $_.Status) }
+    foreach ($d in Get-RenderDevices) { Write-Host ("  {0}  state {1}  {2}" -f $d.Guid, $d.State, $d.Label) }
+    throw 'No active playback devices found. Please send the lines above to the developer.'
+}
 
 if (-not $DeviceId) {
     Write-Host 'Playback devices:'

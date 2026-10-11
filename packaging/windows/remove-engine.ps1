@@ -15,6 +15,14 @@
 param()
 
 $ErrorActionPreference = 'Stop'
+
+# A 32-bit PowerShell sees a redirected copy of the registry, so rerun this
+# script in the 64-bit one.
+if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
+    $ps64 = Join-Path $env:windir 'sysnative\WindowsPowerShell\v1.0\powershell.exe'
+    & $ps64 -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath
+    exit $LASTEXITCODE
+}
 . (Join-Path $PSScriptRoot 'engine-common.ps1')
 
 Write-Host ''
