@@ -68,7 +68,7 @@ impl Scheme {
 
 /// How the spectrum is drawn.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Fill {
+pub enum Look {
     /// A filled area with a line on top.
     #[default]
     FillAndLine,
@@ -76,27 +76,27 @@ pub enum Fill {
     FillOnly,
 }
 
-impl Fill {
-    pub const ALL: [Fill; 3] = [Fill::FillAndLine, Fill::LineOnly, Fill::FillOnly];
+impl Look {
+    pub const ALL: [Look; 3] = [Look::FillAndLine, Look::LineOnly, Look::FillOnly];
 
     pub fn name(self) -> &'static str {
         match self {
-            Fill::FillAndLine => "FILL+LINE",
-            Fill::LineOnly => "LINE",
-            Fill::FillOnly => "FILL",
+            Look::FillAndLine => "FILL+LINE",
+            Look::LineOnly => "LINE",
+            Look::FillOnly => "FILL",
         }
     }
 
-    pub fn next(self) -> Fill {
-        let i = Fill::ALL.iter().position(|s| *s == self).unwrap_or(0);
-        Fill::ALL[(i + 1) % Fill::ALL.len()]
+    pub fn next(self) -> Look {
+        let i = Look::ALL.iter().position(|s| *s == self).unwrap_or(0);
+        Look::ALL[(i + 1) % Look::ALL.len()]
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Style {
     pub scheme: Scheme,
-    pub fill: Fill,
+    pub fill: Look,
     /// Overall strength: low behind the EQ curve, full in the analyser app.
     pub strength: f32,
 }
@@ -153,8 +153,8 @@ pub fn draw(
     }
     let width = (right - left).max(1.0);
     let col = |i: usize| style.scheme.colour((pts[i].x - left) / width, levels[i]);
-    if style.fill != Fill::LineOnly {
-        let top_alpha = if style.fill == Fill::FillOnly {
+    if style.fill != Look::LineOnly {
+        let top_alpha = if style.fill == Look::FillOnly {
             0.55
         } else {
             0.32
@@ -180,7 +180,7 @@ pub fn draw(
         }
         p.add(Shape::mesh(mesh));
     }
-    if style.fill != Fill::FillOnly {
+    if style.fill != Look::FillOnly {
         let alpha = 0.9 * style.strength;
         let single = !matches!(style.scheme, Scheme::Spectrum | Scheme::Heat);
         if single {

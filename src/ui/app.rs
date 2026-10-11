@@ -1,7 +1,7 @@
 //! The EQ Box panel.
 
 use super::graph::{self, fmt_freq};
-use super::spectrum::{self, Fill, Scheme};
+use super::spectrum::{self, Look, Scheme};
 use super::theme::*;
 use super::widgets::*;
 use crate::analyzer::Analyzer;
@@ -36,7 +36,7 @@ struct Saved {
     knobs: KnobStyle,
     analyser: bool,
     analyser_scheme: Scheme,
-    analyser_fill: Fill,
+    analyser_fill: Look,
     running: bool,
     selected: usize,
     last_dir: Option<PathBuf>,
@@ -57,7 +57,7 @@ impl Default for Saved {
             knobs: KnobStyle::Colour,
             analyser: true,
             analyser_scheme: Scheme::default(),
-            analyser_fill: Fill::default(),
+            analyser_fill: Look::default(),
             running: false,
             selected: 5,
             last_dir: None,
