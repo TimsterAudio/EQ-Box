@@ -1,5 +1,5 @@
-//! The Audio Processing Object itself, and the class factory COM uses to
-//! create it.
+//! The engine's logic: format checks, starting and stopping the stream,
+//! and the real-time processing. `com.rs` exposes it to Windows.
 //!
 //! Call order from the audio engine: `Initialize` once, format checks,
 //! `LockForProcess` with the final format, then `APOProcess` on the
@@ -15,41 +15,11 @@ use eq_core::dsp::Equalizer;
 use eq_core::shared::Shared;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, Mutex};
-use windows::Win32::Foundation::{
-    CLASS_E_NOAGGREGATION, E_INVALIDARG, E_OUTOFMEMORY, E_POINTER, HANDLE,
-};
+use windows::Win32::Foundation::{E_INVALIDARG, E_OUTOFMEMORY, E_POINTER, HANDLE};
 use windows::Win32::Media::Audio::Apo::*;
 use windows::Win32::Media::Multimedia::KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
-use windows::Win32::System::Com::{CoTaskMemAlloc, IClassFactory, IClassFactory_Impl};
-use windows_core::{implement, Error, IUnknown, Interface, Ref, Result, BOOL, GUID};
-
-// ---------------------------------------------------------------- factory
-
-#[implement(IClassFactory)]
-pub struct Factory;
-
-impl IClassFactory_Impl for Factory_Impl {
-    fn CreateInstance(
-        &self,
-        outer: Ref<IUnknown>,
-        riid: *const GUID,
-        ppv: *mut *mut core::ffi::c_void,
-    ) -> Result<()> {
-        if ppv.is_null() || riid.is_null() {
-            return Err(E_POINTER.into());
-        }
-        unsafe { *ppv = core::ptr::null_mut() };
-        if !outer.is_null() {
-            return Err(CLASS_E_NOAGGREGATION.into());
-        }
-        let apo: IUnknown = EqBoxApo::new().into();
-        unsafe { apo.query(riid, ppv).ok() }
-    }
-
-    fn LockServer(&self, _lock: BOOL) -> Result<()> {
-        Ok(())
-    }
-}
+use windows::Win32::System::Com::CoTaskMemAlloc;
+use windows_core::{Error, Interface, Result, GUID};
 
 // ---------------------------------------------------------------- engine
 
@@ -66,23 +36,27 @@ struct State {
     eq: Option<Equalizer>,
 }
 
-#[implement(
-    IAudioProcessingObject,
-    IAudioProcessingObjectRT,
-    IAudioProcessingObjectConfiguration,
-    IAudioSystemEffects,
-    IAudioSystemEffects2
-)]
-pub struct EqBoxApo {
+/// The engine's state and logic, without the COM plumbing (see `com.rs`).
+pub struct Engine {
     state: Mutex<State>,
     shared: Arc<Shared>,
 }
 
-impl EqBoxApo {
-    fn new() -> Self {
+impl Engine {
+    pub fn new(aggregated: bool) -> Self {
         let n = status::CREATED.fetch_add(1, Relaxed) + 1;
-        events::log(Level::Info, &format!("engine instance {n} created"));
-        EqBoxApo {
+        events::log(
+            Level::Info,
+            &format!(
+                "engine instance {n} created ({})",
+                if aggregated {
+                    "aggregated by the audio engine"
+                } else {
+                    "standalone"
+                }
+            ),
+        );
+        Engine {
             state: Mutex::new(State {
                 initialized: false,
                 locked: false,
@@ -136,14 +110,14 @@ fn float_format(t: &IAudioMediaType) -> Result<Format> {
 }
 
 /// EQ Box works in place, so input and output must be the same format.
-fn check_format(
-    opposite: Ref<IAudioMediaType>,
-    requested: Ref<IAudioMediaType>,
+pub fn check_format(
+    opposite: Option<&IAudioMediaType>,
+    requested: Option<&IAudioMediaType>,
 ) -> Result<IAudioMediaType> {
     status::FORMAT_QUERIES.fetch_add(1, Relaxed);
-    let req = requested.ok()?;
+    let req = requested.ok_or(Error::from(E_POINTER))?;
     let f = float_format(req)?;
-    if let Some(opp) = opposite.as_ref() {
+    if let Some(opp) = opposite {
         let o = float_format(opp)?;
         if o != f {
             events::log_limited(
@@ -178,19 +152,15 @@ fn wide<const N: usize>(s: &str) -> [u16; N] {
     out
 }
 
-impl IAudioProcessingObject_Impl for EqBoxApo_Impl {
-    fn Reset(&self) -> Result<()> {
+impl Engine {
+    pub fn reset(&self) -> Result<()> {
         if let Some(eq) = self.state().eq.as_mut() {
             eq.reset();
         }
         Ok(())
     }
 
-    fn GetLatency(&self) -> Result<i64> {
-        Ok(0)
-    }
-
-    fn GetRegistrationProperties(&self) -> Result<*mut APO_REG_PROPERTIES> {
+    pub fn registration_properties(&self) -> Result<*mut APO_REG_PROPERTIES> {
         let props = APO_REG_PROPERTIES {
             clsid: CLSID_EQ_BOX_APO,
             Flags: APO_FLAG(APO_FLAG_DEFAULT.0 | APO_FLAG_INPLACE.0),
@@ -216,7 +186,7 @@ impl IAudioProcessingObject_Impl for EqBoxApo_Impl {
         Ok(p)
     }
 
-    fn Initialize(&self, _cbdatasize: u32, _pbydata: *const u8) -> Result<()> {
+    pub fn initialize(&self, _cbdatasize: u32, _pbydata: *const u8) -> Result<()> {
         // The data is the endpoint's property stores; EQ Box doesn't need
         // them, its settings come from its own file.
         let mut st = self.state();
@@ -232,32 +202,14 @@ impl IAudioProcessingObject_Impl for EqBoxApo_Impl {
         Ok(())
     }
 
-    fn IsInputFormatSupported(
-        &self,
-        poppositeformat: Ref<IAudioMediaType>,
-        prequestedinputformat: Ref<IAudioMediaType>,
-    ) -> Result<IAudioMediaType> {
-        check_format(poppositeformat, prequestedinputformat)
-    }
-
-    fn IsOutputFormatSupported(
-        &self,
-        poppositeformat: Ref<IAudioMediaType>,
-        prequestedoutputformat: Ref<IAudioMediaType>,
-    ) -> Result<IAudioMediaType> {
-        check_format(poppositeformat, prequestedoutputformat)
-    }
-
-    fn GetInputChannelCount(&self) -> Result<u32> {
+    pub fn input_channel_count(&self) -> Result<u32> {
         match self.state().format {
             Some(f) => Ok(f.channels),
             None => Err(APOERR_NOT_INITIALIZED.into()),
         }
     }
-}
 
-impl IAudioProcessingObjectConfiguration_Impl for EqBoxApo_Impl {
-    fn LockForProcess(
+    pub fn lock_for_process(
         &self,
         u32numinputconnections: u32,
         ppinputconnections: *const *const APO_CONNECTION_DESCRIPTOR,
@@ -316,7 +268,7 @@ impl IAudioProcessingObjectConfiguration_Impl for EqBoxApo_Impl {
         result
     }
 
-    fn UnlockForProcess(&self) -> Result<()> {
+    pub fn unlock_for_process(&self) -> Result<()> {
         let mut st = self.state();
         if !st.locked {
             return Err(APOERR_ALREADY_UNLOCKED.into());
@@ -325,10 +277,8 @@ impl IAudioProcessingObjectConfiguration_Impl for EqBoxApo_Impl {
         status::LOCKED.fetch_sub(1, Relaxed);
         Ok(())
     }
-}
 
-impl IAudioProcessingObjectRT_Impl for EqBoxApo_Impl {
-    fn APOProcess(
+    pub fn process(
         &self,
         u32numinputconnections: u32,
         ppinputconnections: *const *const APO_CONNECTION_PROPERTY,
@@ -376,19 +326,7 @@ impl IAudioProcessingObjectRT_Impl for EqBoxApo_Impl {
         }
     }
 
-    fn CalcInputFrames(&self, u32outputframecount: u32) -> u32 {
-        u32outputframecount
-    }
-
-    fn CalcOutputFrames(&self, u32inputframecount: u32) -> u32 {
-        u32inputframecount
-    }
-}
-
-impl IAudioSystemEffects_Impl for EqBoxApo_Impl {}
-
-impl IAudioSystemEffects2_Impl for EqBoxApo_Impl {
-    fn GetEffectsList(
+    pub fn effects_list(
         &self,
         ppeffectsids: *mut *mut GUID,
         pceffects: *mut u32,

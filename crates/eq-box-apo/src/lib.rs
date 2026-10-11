@@ -14,6 +14,7 @@
 #![cfg(windows)]
 
 mod apo;
+mod com;
 mod events;
 mod settings_watch;
 mod status;
@@ -52,7 +53,7 @@ pub unsafe extern "system" fn DllGetClassObject(
         events::Level::Info,
         &format!("loaded by {exe} (version {})", env!("CARGO_PKG_VERSION")),
     );
-    let factory: IClassFactory = apo::Factory.into();
+    let factory: IClassFactory = com::Factory.into();
     factory.query(riid, ppv)
 }
 

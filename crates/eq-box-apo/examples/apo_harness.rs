@@ -22,14 +22,18 @@ fn main() {
 
 #[cfg(windows)]
 mod win {
+    use core::ffi::c_void;
     use eq_core::dsp::EqSettings;
     use eq_core::engine_settings;
     use std::f64::consts::PI;
+    use std::sync::atomic::{AtomicU32, Ordering};
     use windows::Win32::Media::Audio::Apo::*;
     use windows::Win32::Media::Multimedia::KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
     use windows::Win32::System::Com::{CoTaskMemFree, IClassFactory};
     use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-    use windows_core::{implement, w, Interface, Ref, Result, BOOL, GUID, HRESULT, PCSTR};
+    use windows_core::{
+        implement, w, IUnknown, IUnknown_Vtbl, Interface, Ref, Result, BOOL, GUID, HRESULT, PCSTR,
+    };
 
     const CLSID: GUID = GUID::from_u128(0x0febc01a_a301_491f_bbcd_17284a13cb61);
     const RATE: f32 = 48_000.0;
@@ -61,6 +65,130 @@ mod win {
             }
             Ok(())
         }
+    }
+
+    /// A stand-in for the audio engine's outer object when it aggregates
+    /// an effect: it answers IUnknown itself and passes every other
+    /// interface request to the effect's private IUnknown.
+    #[repr(C)]
+    struct Outer {
+        vtbl: *const IUnknown_Vtbl,
+        refs: AtomicU32,
+        inner: *mut c_void,
+    }
+
+    unsafe extern "system" fn outer_query(
+        this: *mut c_void,
+        iid: *const GUID,
+        ppv: *mut *mut c_void,
+    ) -> HRESULT {
+        unsafe {
+            let o = &*(this as *const Outer);
+            if *iid == IUnknown::IID {
+                outer_add_ref(this);
+                *ppv = this;
+                return HRESULT(0);
+            }
+            let inner = &**(o.inner as *const *const IUnknown_Vtbl);
+            (inner.QueryInterface)(o.inner, iid, ppv)
+        }
+    }
+
+    unsafe extern "system" fn outer_add_ref(this: *mut c_void) -> u32 {
+        unsafe { &*(this as *const Outer) }
+            .refs
+            .fetch_add(1, Ordering::SeqCst)
+            + 1
+    }
+
+    unsafe extern "system" fn outer_release(this: *mut c_void) -> u32 {
+        unsafe {
+            let left = (*(this as *const Outer))
+                .refs
+                .fetch_sub(1, Ordering::SeqCst)
+                - 1;
+            if left == 0 {
+                let o = Box::from_raw(this as *mut Outer);
+                if !o.inner.is_null() {
+                    let inner = &**(o.inner as *const *const IUnknown_Vtbl);
+                    (inner.Release)(o.inner);
+                }
+            }
+            left
+        }
+    }
+
+    static OUTER_VTBL: IUnknown_Vtbl = IUnknown_Vtbl {
+        QueryInterface: outer_query,
+        AddRef: outer_add_ref,
+        Release: outer_release,
+    };
+
+    /// Creates the engine the way audiodg.exe does (aggregated), starts a
+    /// stream and checks the EQ is applied.
+    unsafe fn aggregated(factory: &IClassFactory) -> std::result::Result<(), String> {
+        unsafe {
+            let raw = Box::into_raw(Box::new(Outer {
+                vtbl: &OUTER_VTBL,
+                refs: AtomicU32::new(1),
+                inner: core::ptr::null_mut(),
+            }));
+            let outer = IUnknown::from_raw(raw as *mut c_void);
+            check(
+                factory
+                    .CreateInstance::<_, IAudioProcessingObject>(&outer)
+                    .is_err(),
+                "aggregated creation refuses anything but IUnknown",
+            )?;
+            let inner: IUnknown = factory
+                .CreateInstance(&outer)
+                .map_err(|e| format!("aggregated CreateInstance: {e}"))?;
+            (*raw).inner = inner.into_raw();
+
+            let apo: IAudioProcessingObject = outer
+                .cast()
+                .map_err(|e| format!("outer QueryInterface: {e}"))?;
+            let back: IUnknown = apo.cast().map_err(|e| e.to_string())?;
+            check(
+                back.as_raw() == outer.as_raw(),
+                "aggregated interfaces answer for the outer object",
+            )?;
+            drop(back);
+            apo.Initialize(&[])
+                .map_err(|e| format!("Initialize: {e}"))?;
+            let fmt: IAudioMediaType = FloatStereo.into();
+            apo.IsOutputFormatSupported(None, &fmt)
+                .map_err(|e| format!("IsOutputFormatSupported: {e}"))?;
+            let cfg: IAudioProcessingObjectConfiguration =
+                outer.cast().map_err(|e| e.to_string())?;
+            let desc = APO_CONNECTION_DESCRIPTOR {
+                Type: APO_CONNECTION_BUFFER_TYPE_EXTERNAL,
+                pBuffer: 0,
+                u32MaxFrameCount: 480,
+                pFormat: core::mem::ManuallyDrop::new(Some(fmt.clone())),
+                u32Signature: 0,
+            };
+            let d: *const APO_CONNECTION_DESCRIPTOR = &desc;
+            cfg.LockForProcess(&[d], &[d])
+                .map_err(|e| format!("LockForProcess: {e}"))?;
+            let rt: IAudioProcessingObjectRT = outer.cast().map_err(|e| e.to_string())?;
+            let g = measure(&rt, 1000.0);
+            println!("     1 kHz through the aggregated engine: {g:+.2} dB (expect +12)");
+            check(
+                (g - 12.0).abs() < 0.2,
+                "EQ when aggregated, as audiodg creates it",
+            )?;
+            cfg.UnlockForProcess()
+                .map_err(|e| format!("UnlockForProcess: {e}"))?;
+            core::mem::ManuallyDrop::into_inner(desc.pFormat);
+            drop((rt, cfg, apo));
+            check(
+                (*raw).refs.load(Ordering::SeqCst) == 1,
+                "aggregated reference counts balance",
+            )?;
+            drop(outer); // frees the outer object and, with it, the engine
+        }
+        Ok(())
     }
 
     type GetClassObject =
@@ -133,6 +261,7 @@ mod win {
                 .ok()
                 .map_err(|e| format!("DllGetClassObject: {e}"))?;
             let factory = factory.ok_or("no factory")?;
+            aggregated(&factory)?;
             let apo: IAudioProcessingObject = factory
                 .CreateInstance(None)
                 .map_err(|e| format!("CreateInstance: {e}"))?;
