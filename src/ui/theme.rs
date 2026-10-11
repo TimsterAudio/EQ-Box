@@ -75,6 +75,8 @@ pub const FOCUS: Color32 = rgb(0xec, 0x7b, 0x24);
 /// Knob families: colour says what a control does.
 pub const FAM_PITCH: Color32 = rgb(0x4f, 0x8c, 0xc9);
 pub const FAM_TONE: Color32 = rgb(0x5a, 0xa8, 0x6f);
+/// The band On keys' light.
+pub const ON_GREEN: Color32 = rgb(0, 140, 100);
 /// Filter type: a stepped choice, not a level or a tone.
 pub const FAM_TYPE: Color32 = rgb(0xe0, 0x9a, 0x2a);
 #[allow(dead_code)]

@@ -75,11 +75,12 @@ const GAIN: Spec = Spec {
     log: false,
     step: 0.1,
 };
-/// The filter type knob: one step per type, in `FilterKind::ALL` order.
+/// The filter type knob: one step per type, clockwise in `FilterKind::ALL`
+/// order.
 const TYPE: Spec = Spec {
     min: 0.0,
     max: (FilterKind::ALL.len() - 1) as f32,
-    default: 1.0, // bell
+    default: 2.0, // peak
     log: false,
     step: 1.0,
 };
@@ -1154,11 +1155,12 @@ impl EqApp {
         // Filter type: a stepped knob, with the type in its display
         let kinds = FilterKind::ALL;
         let mut t = kinds.iter().position(|k| *k == b.kind).unwrap_or(1) as f32;
-        let tx = rect.center().x + 6.0;
+        // In the knob column, over Freq and Q.
+        let tx = rect.right() - 46.0;
         let resp = knob(
             ui,
-            Pos2::new(tx, rect.top() + 44.0),
-            16.0,
+            Pos2::new(tx, rect.top() + 46.0),
+            17.0,
             Id::new(("type", i)),
             &mut t,
             &TYPE,
@@ -1173,22 +1175,22 @@ impl EqApp {
         }
         legend(
             ui.painter(),
-            Pos2::new(tx, rect.top() + 64.0),
+            Pos2::new(tx, rect.top() + 68.0),
             Align2::CENTER_TOP,
             "Type",
             th,
         );
         readout(
             ui.painter(),
-            Pos2::new(tx, rect.top() + 80.0),
+            Pos2::new(tx, rect.top() + 84.0),
             b.kind.short(),
             60.0,
         );
 
         // Gain fader
         let fr = Rect::from_min_size(
-            Pos2::new(rect.left() + 14.0, rect.top() + 44.0),
-            Vec2::new(36.0, 222.0),
+            Pos2::new(rect.left() + 14.0, rect.top() + 26.0),
+            Vec2::new(36.0, 244.0),
         );
         let resp = fader(
             ui,
@@ -1203,17 +1205,18 @@ impl EqApp {
         if resp.changed() {
             touched = Some(("Gain", fmt_db(b.gain_db)));
         }
+        // The gain readout lines up with the On key, its legend with "On".
         let cx_f = fr.center().x;
         legend(
             ui.painter(),
-            Pos2::new(cx_f, rect.top() + 272.0),
+            Pos2::new(cx_f, rect.top() + 301.0),
             Align2::CENTER_TOP,
             "Gain",
             th,
         );
         readout(
             ui.painter(),
-            Pos2::new(cx_f, rect.top() + 288.0),
+            Pos2::new(cx_f, rect.top() + 279.0),
             &if b.kind.has_gain() {
                 format!("{:+.1}", b.gain_db)
             } else {
@@ -1226,7 +1229,7 @@ impl EqApp {
         let cx = rect.right() - 46.0;
         let resp = knob(
             ui,
-            Pos2::new(cx, rect.top() + 129.0),
+            Pos2::new(cx, rect.top() + 133.0),
             19.0,
             Id::new(("freq", i)),
             &mut b.freq,
@@ -1240,21 +1243,21 @@ impl EqApp {
         }
         legend(
             ui.painter(),
-            Pos2::new(cx, rect.top() + 153.0),
+            Pos2::new(cx, rect.top() + 157.0),
             Align2::CENTER_TOP,
             "Freq",
             th,
         );
         readout(
             ui.painter(),
-            Pos2::new(cx, rect.top() + 169.0),
+            Pos2::new(cx, rect.top() + 173.0),
             &fmt_hz(b.freq),
             72.0,
         );
 
         let resp = knob(
             ui,
-            Pos2::new(cx, rect.top() + 215.0),
+            Pos2::new(cx, rect.top() + 217.0),
             19.0,
             Id::new(("q", i)),
             &mut b.q,
@@ -1268,14 +1271,14 @@ impl EqApp {
         }
         legend(
             ui.painter(),
-            Pos2::new(cx, rect.top() + 239.0),
+            Pos2::new(cx, rect.top() + 241.0),
             Align2::CENTER_TOP,
             "Q",
             th,
         );
         readout(
             ui.painter(),
-            Pos2::new(cx, rect.top() + 254.0),
+            Pos2::new(cx, rect.top() + 256.0),
             &format!("{:.2}", b.q),
             56.0,
         );
@@ -1285,17 +1288,7 @@ impl EqApp {
             Pos2::new(cx - 20.0, rect.top() + 280.0),
             Vec2::new(40.0, 16.0),
         );
-        if lit_key(
-            ui,
-            r,
-            Id::new(("on", i)),
-            BAND_COLOURS[i],
-            b.enabled,
-            "On",
-            th,
-        )
-        .clicked()
-        {
+        if lit_key(ui, r, Id::new(("on", i)), ON_GREEN, b.enabled, "On", th).clicked() {
             b.enabled = !b.enabled;
             touched = Some(("", if b.enabled { "on".into() } else { "off".into() }));
             interacted = true;

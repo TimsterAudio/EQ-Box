@@ -31,19 +31,19 @@ pub enum FilterKind {
 }
 
 impl FilterKind {
-    /// In panel order: the gain types, then the cut types.
+    /// In panel order: clockwise on each band's Type knob.
     pub const ALL: [FilterKind; 6] = [
+        FilterKind::LowPass,
         FilterKind::LowShelf,
         FilterKind::Peak,
         FilterKind::HighShelf,
         FilterKind::HighPass,
         FilterKind::Notch,
-        FilterKind::LowPass,
     ];
 
     pub fn short(self) -> &'static str {
         match self {
-            FilterKind::Peak => "BELL",
+            FilterKind::Peak => "PEAK",
             FilterKind::LowShelf => "LO SH",
             FilterKind::HighShelf => "HI SH",
             FilterKind::HighPass => "HPF",

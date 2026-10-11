@@ -22,9 +22,9 @@ EQ Box uses Drone Box's panel language, so the two look like the same family of 
 |---|---|
 | Band gain | **Fader**, like a level, 0 dB at the bold tick |
 | Band frequency, Q | **Knob**, green (tone family) |
-| Filter type (6 choices) | **Stepped knob**, amber (its own family colour), one tick per type, with the type in a red readout: LO SH / BELL / HI SH / HPF / NOTCH / LPF |
+| Filter type (6 choices) | **Stepped knob**, amber (its own family colour), one tick per type, with the type in a red readout. Clockwise: LPF / LO SH / PEAK / HI SH / HPF / NOTCH. It sits in the knob column above Freq and Q |
 | Auto preamp | **Grey key** with LED, beside the Preamp knob |
-| Band on/off | **Lit key** with no LED: it glows in the band's colour when on, and is a dark lens when off |
+| Band on/off | **Lit key** with no LED: it glows green (RGB 0, 140, 100) when on, and is a dark lens when off. The gain readout sits level with it, with its legend level with "On" |
 | Bypass | **Yellow key** with LED |
 | Run / Stop | **Red key** with LED, like Drone Box's Play / Stop |
 | Load / Save presets | **Cream keys**. Flat and Reset are **grey** (utility) keys |
@@ -40,5 +40,5 @@ EQ Box uses Drone Box's panel language, so the two look like the same family of 
 - **Top strip, 0–110:** wordmark, logo and model line; the LED display; the APO preset keys; In and Out meters; Preamp; the Panel and Knobs switches; Bypass; Run / Stop.
 - **Stripe** at 110.
 - **Row 2, 136–500:** **Response** (the graph) and **Audio** (system, input, output, buffer, rescan, dropouts, help).
-- **Row 3, 518–848:** ten **Band** strips, each with the Type knob at the top, the gain fader on the left (its readout shows `--` for the types without gain), the Freq and Q knobs on the right, and the On key.
+- **Row 3, 518–848:** ten **Band** strips, each with the full-height gain fader on the left, the Type, Freq and Q knobs in a column on the right (its readout shows `--` for the types without gain), the Freq and Q knobs on the right, and the On key.
 - **Footer:** usage hints, and notices such as preset warnings.
