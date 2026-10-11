@@ -1,6 +1,6 @@
 # EQ Box
 
-**Timster's Audio Works – EQ Box v0.1.0**: a native ten-band parametric equaliser for Windows and Linux, with the same Jupiter-style panel as Drone Box.
+**Timster's Audio Works – EQ Box v0.2.0**: a native ten-band parametric equaliser for Windows and Linux, with the same Jupiter-style panel as Drone Box.
 
 ![EQ Box with an AutoEQ preset loaded and pink noise playing](docs/screenshot.png)
 

@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- Windows: a system-wide engine (test build). EQ Box's EQ runs inside Windows' own audio engine and equalises every app on the outputs you choose, with no virtual cable. Install it with `install-engine.ps1`, then choose **Windows (system-wide)** under System.
+## 0.2.0 – 2026-10-11
+
+- Windows: a system-wide engine (test build). EQ Box's EQ runs inside Windows' own audio engine and equalises every app on the outputs you choose, with no virtual cable. Choose **Windows (system-wide)** under System and press **Install**.
 - WASAPI no longer offers "Loopback:" inputs, and never captures an output device, because looping an output back into the EQ can feed back.
 - The preset format is now called the APO preset format in dialogs and docs.
 - Windows engine: install it from EQ Box (Install / Add / Remove under System) or by double-clicking the `.cmd` files, with no PowerShell typing. The display shows whether the engine is installed and running.
