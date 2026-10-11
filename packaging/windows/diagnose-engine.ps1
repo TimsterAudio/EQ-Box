@@ -11,6 +11,14 @@
 param()
 
 $ErrorActionPreference = 'Continue'
+
+# A 32-bit PowerShell sees redirected copies of Program Files and the
+# registry, so rerun this script in the 64-bit one.
+if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
+    $ps64 = Join-Path $env:windir 'sysnative\WindowsPowerShell\v1.0\powershell.exe'
+    & $ps64 -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath
+    exit $LASTEXITCODE
+}
 . (Join-Path $PSScriptRoot 'engine-common.ps1')
 
 function Section([string]$title) { Write-Host ''; Write-Host "== $title" -ForegroundColor Cyan }
@@ -31,6 +39,18 @@ Write-Host ("DisableProtectedAudioDG: {0}" -f (Get-ItemProperty -LiteralPath $au
 Section 'Is the engine loaded by Windows audio?'
 # Only Windows' audio process: scanning every process can take minutes.
 tasklist /fi "imagename eq audiodg.exe" /m $DllName
+# Which copy of the DLL it loaded, to tell builds apart.
+foreach ($p in Get-Process -Name audiodg -ErrorAction SilentlyContinue) {
+    foreach ($m in $p.Modules | Where-Object ModuleName -eq $DllName) {
+        $f = Get-Item -LiteralPath $m.FileName -ErrorAction SilentlyContinue
+        Write-Host ("Loaded from {0}  ({1} bytes, {2})" -f $m.FileName, $f.Length, $f.LastWriteTime)
+    }
+    Write-Host ("audiodg.exe started {0}" -f $p.StartTime)
+}
+if (Test-Path -LiteralPath $dll) {
+    $f = Get-Item -LiteralPath $dll
+    Write-Host ("Installed DLL: {0} bytes, {1}" -f $f.Length, $f.LastWriteTime)
+}
 
 Section 'Playback devices'
 foreach ($d in Get-RenderDevices) {
