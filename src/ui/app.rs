@@ -26,6 +26,8 @@ const STORAGE_KEY: &str = "eq-box";
 struct Saved {
     bands: [BandParams; NUM_BANDS],
     preamp_db: f32,
+    /// The preamp follows the bands, keeping the response's peak at 0 dB.
+    auto_preamp: bool,
     bypass: bool,
     preset_name: String,
     backend: Option<String>,
@@ -47,6 +49,7 @@ impl Default for Saved {
         Saved {
             bands: default_bands(),
             preamp_db: 0.0,
+            auto_preamp: false,
             bypass: false,
             preset_name: "Flat".into(),
             backend: None,
@@ -71,6 +74,14 @@ const GAIN: Spec = Spec {
     default: 0.0,
     log: false,
     step: 0.1,
+};
+/// The filter type knob: one step per type, in `FilterKind::ALL` order.
+const TYPE: Spec = Spec {
+    min: 0.0,
+    max: (FilterKind::ALL.len() - 1) as f32,
+    default: 1.0, // bell
+    log: false,
+    step: 1.0,
 };
 const PREAMP: Spec = Spec {
     min: PREAMP_MIN_DB,
@@ -674,24 +685,27 @@ impl EqApp {
             let lr = |a: f32, b: f32| [a, b];
             meter(
                 p,
-                Rect::from_min_size(at(964.0, 26.0), Vec2::new(160.0, 16.0)),
+                Rect::from_min_size(at(948.0, 26.0), Vec2::new(160.0, 16.0)),
                 lr(self.peaks_db[0], self.peaks_db[1]),
             );
             meter(
                 p,
-                Rect::from_min_size(at(964.0, 50.0), Vec2::new(160.0, 16.0)),
+                Rect::from_min_size(at(948.0, 50.0), Vec2::new(160.0, 16.0)),
                 lr(self.peaks_db[2], self.peaks_db[3]),
             );
-            legend(p, at(956.0, 34.0), Align2::RIGHT_CENTER, "In", th);
-            legend(p, at(956.0, 58.0), Align2::RIGHT_CENTER, "Out", th);
-            legend(p, at(1044.0, 74.0), Align2::CENTER_TOP, "Level L / R", th);
+            legend(p, at(940.0, 34.0), Align2::RIGHT_CENTER, "In", th);
+            legend(p, at(940.0, 58.0), Align2::RIGHT_CENTER, "Out", th);
+            legend(p, at(1028.0, 74.0), Align2::CENTER_TOP, "Level L / R", th);
         }
 
-        // Preamp
+        // Preamp, and Auto, which keeps the response's peak at 0 dB
+        if self.s.auto_preamp {
+            self.s.preamp_db = auto_preamp_db(&self.s.bands, 48_000.0);
+        }
         let mut pre = self.s.preamp_db;
         if knob(
             ui,
-            at(1178.0, 44.0),
+            at(1150.0, 44.0),
             20.0,
             Id::new("preamp"),
             &mut pre,
@@ -701,22 +715,49 @@ impl EqApp {
         )
         .changed()
         {
+            // Turning the knob takes over from Auto.
+            self.s.auto_preamp = false;
             self.s.preamp_db = pre;
             self.touch("Preamp", fmt_db(pre));
         }
         legend(
             ui.painter(),
-            at(1178.0, 74.0),
+            at(1150.0, 74.0),
             Align2::CENTER_TOP,
             "Preamp",
             th,
         );
         readout(
             ui.painter(),
-            at(1178.0, 90.0),
+            at(1150.0, 90.0),
             &fmt_db(self.s.preamp_db),
             64.0,
         );
+        let r = Rect::from_min_size(at(1180.0, 46.0), Vec2::new(36.0, 18.0));
+        if key(
+            ui,
+            r,
+            Id::new("auto-preamp"),
+            K_GREY,
+            Some(self.s.auto_preamp),
+            "Auto",
+            th,
+        )
+        .clicked()
+        {
+            self.s.auto_preamp = !self.s.auto_preamp;
+            if self.s.auto_preamp {
+                self.s.preamp_db = auto_preamp_db(&self.s.bands, 48_000.0);
+            }
+            self.touch(
+                "Auto preamp",
+                if self.s.auto_preamp {
+                    fmt_db(self.s.preamp_db)
+                } else {
+                    "off".into()
+                },
+            );
+        }
 
         // Panel and knob switches
         let group = |ui: &Ui, x: f32, label: &str| {
@@ -730,13 +771,13 @@ impl EqApp {
                 2.0,
             );
         };
-        group(ui, 1272.0, "PANEL");
-        group(ui, 1382.0, "KNOBS");
+        group(ui, 1284.0, "PANEL");
+        group(ui, 1392.0, "KNOBS");
         let sw: [(&str, bool, f32); 4] = [
-            ("Black", self.s.panel == PanelKind::Black, 1226.0),
-            ("Silver", self.s.panel == PanelKind::Silver, 1274.0),
-            ("Colour", self.s.knobs == KnobStyle::Colour, 1336.0),
-            ("Pointer", self.s.knobs == KnobStyle::Pointer, 1384.0),
+            ("Black", self.s.panel == PanelKind::Black, 1238.0),
+            ("Silver", self.s.panel == PanelKind::Silver, 1286.0),
+            ("Colour", self.s.knobs == KnobStyle::Colour, 1346.0),
+            ("Pointer", self.s.knobs == KnobStyle::Pointer, 1394.0),
         ];
         for (i, (label, on, x)) in sw.iter().enumerate() {
             let r = Rect::from_min_size(at(*x, 46.0), Vec2::new(42.0, 18.0));
@@ -1110,39 +1151,44 @@ impl EqApp {
         let mut touched: Option<(&str, String)> = None;
         let mut interacted = false;
 
-        // Filter type: two rows of LED keys, the gain types over the cuts
+        // Filter type: a stepped knob, with the type in its display
         let kinds = FilterKind::ALL;
-        let kw = 38.0;
-        let x0 = rect.center().x - (kw * 3.0 + 12.0) / 2.0;
-        for (k, kind) in kinds.iter().enumerate() {
-            let r = Rect::from_min_size(
-                Pos2::new(
-                    x0 + (k % 3) as f32 * (kw + 6.0),
-                    rect.top() + 28.0 + (k / 3) as f32 * 44.0,
-                ),
-                Vec2::new(kw, 12.0),
-            );
-            if key(
-                ui,
-                r,
-                Id::new(("type", i, k)),
-                K_ORANGE,
-                Some(b.kind == *kind),
-                kind.short(),
-                th,
-            )
-            .clicked()
-            {
-                b.kind = *kind;
-                touched = Some(("Type", kind.short().to_string()));
-                interacted = true;
-            }
+        let mut t = kinds.iter().position(|k| *k == b.kind).unwrap_or(1) as f32;
+        let tx = rect.center().x + 6.0;
+        let resp = knob(
+            ui,
+            Pos2::new(tx, rect.top() + 44.0),
+            16.0,
+            Id::new(("type", i)),
+            &mut t,
+            &TYPE,
+            Some(FAM_TYPE),
+            th,
+        );
+        interacted |= resp.is_pointer_button_down_on();
+        let kind = kinds[(t.round() as usize).min(kinds.len() - 1)];
+        if kind != b.kind {
+            b.kind = kind;
+            touched = Some(("Type", kind.short().to_string()));
         }
+        legend(
+            ui.painter(),
+            Pos2::new(tx, rect.top() + 64.0),
+            Align2::CENTER_TOP,
+            "Type",
+            th,
+        );
+        readout(
+            ui.painter(),
+            Pos2::new(tx, rect.top() + 80.0),
+            b.kind.short(),
+            60.0,
+        );
 
         // Gain fader
         let fr = Rect::from_min_size(
-            Pos2::new(rect.left() + 14.0, rect.top() + 110.0),
-            Vec2::new(36.0, 156.0),
+            Pos2::new(rect.left() + 14.0, rect.top() + 44.0),
+            Vec2::new(36.0, 222.0),
         );
         let resp = fader(
             ui,

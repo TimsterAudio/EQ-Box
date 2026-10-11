@@ -1,4 +1,4 @@
-//! EQ Box Analyser: a stand-alone spectrum analyser. It listens to an
+//! SP-10 Spectrum Analyser: a stand-alone spectrum analyser. It listens to an
 //! output (what's playing) or an input, and fills the window with the
 //! spectrum as a curve, bars or LED columns, in the same colour schemes as
 //! EQ Box. The control strip along the bottom can be hidden for a clean
@@ -19,7 +19,7 @@ use egui::{
 };
 use serde::{Deserialize, Serialize};
 
-const STORAGE_KEY: &str = "eq-box-analyser";
+const STORAGE_KEY: &str = "sp-10";
 /// The control strip's design size; it's scaled down to fit narrow windows.
 const STRIP: Vec2 = Vec2::new(1490.0, 132.0);
 pub const DEFAULT_SIZE: Vec2 = Vec2::new(1280.0, 640.0);
@@ -509,7 +509,7 @@ impl AnalyserApp {
                 },
             );
             job.append(
-                "EQ Box",
+                "SP-10",
                 0.0,
                 TextFormat {
                     font_id: font(F_MAKER_BOLD, 12.0),
@@ -530,7 +530,7 @@ impl AnalyserApp {
         slanted_text(
             ui,
             at(20.0, 46.0),
-            "ANALYSER",
+            "SP-10",
             font(F_LOGO, 24.0),
             th.legend,
             2.5,
@@ -540,7 +540,7 @@ impl AnalyserApp {
             ui.painter(),
             at(18.0, 86.0),
             Align2::LEFT_TOP,
-            &format!("EQ BOX SPECTRUM ANALYSER · V{VERSION}"),
+            &format!("SP-10 · SPECTRUM ANALYSER · V{VERSION}"),
             font(F_LEGEND, 9.5),
             th.legend_dim,
             2.0,

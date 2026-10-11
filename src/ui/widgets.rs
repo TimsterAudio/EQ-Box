@@ -611,11 +611,19 @@ pub fn knob(
         _ => th.tick,
     };
 
-    // Tick scale
-    for i in 0..=10 {
-        let a = (-135.0 + 27.0 * i as f32).to_radians();
+    // Tick scale: tenths, or one tick per position for a stepped knob
+    // with few positions (like the filter type).
+    let positions = (spec.max - spec.min) / spec.step.max(1e-6);
+    let stepped = !spec.log && spec.step > 0.0 && positions <= 8.0;
+    let n = if stepped {
+        positions.round() as usize
+    } else {
+        10
+    };
+    for i in 0..=n {
+        let a = (-135.0 + 270.0 * i as f32 / n as f32).to_radians();
         let d = Vec2::new(a.sin(), -a.cos());
-        let (r0, r1) = if i == 0 || i == 5 || i == 10 {
+        let (r0, r1) = if stepped || i == 0 || i == 5 || i == 10 {
             (r + 3.0, r + 8.0)
         } else {
             (r + 4.0, r + 7.0)

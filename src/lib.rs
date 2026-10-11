@@ -1,5 +1,5 @@
 //! The code behind EQ Box's two programs: `eq-box`, the equaliser, and
-//! `eq-box-analyser`, the stand-alone spectrum analyser.
+//! `sp-10`, the SP-10 Spectrum Analyser.
 
 // Index loops read best in the per-sample DSP code.
 #![allow(clippy::needless_range_loop)]

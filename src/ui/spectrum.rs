@@ -1,5 +1,5 @@
 //! Drawing a spectrum in a chosen colour scheme and style. Shared by EQ
-//! Box's analyser (behind the response graph) and the analyser app.
+//! Box's analyser (behind the response graph) and SP-10, the analyser on its own.
 
 use super::theme::{lerp_colour, LCD_INK};
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
@@ -97,7 +97,7 @@ impl Look {
 pub struct Style {
     pub scheme: Scheme,
     pub fill: Look,
-    /// Overall strength: low behind the EQ curve, full in the analyser app.
+    /// Overall strength: low behind the EQ curve, full in SP-10.
     pub strength: f32,
 }
 

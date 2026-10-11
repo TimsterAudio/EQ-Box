@@ -1,4 +1,4 @@
-//! Listen-only audio for the analyser app: what an output is playing, or
+//! Listen-only audio for SP-10, the spectrum analyser: what an output is playing, or
 //! an input such as a microphone. Nothing is ever played back, so nothing
 //! can feed back.
 //!
@@ -384,8 +384,8 @@ mod pw {
             *pw::keys::MEDIA_TYPE => "Audio",
             *pw::keys::MEDIA_CATEGORY => "Capture",
             *pw::keys::MEDIA_ROLE => "DSP",
-            *pw::keys::NODE_NAME => "eq_box_analyser",
-            *pw::keys::NODE_DESCRIPTION => "EQ Box Analyser",
+            *pw::keys::NODE_NAME => "sp_10",
+            *pw::keys::NODE_DESCRIPTION => "SP-10 Spectrum Analyser",
             "audio.position" => "FL,FR",
         };
         if output {
@@ -395,7 +395,7 @@ mod pw {
         if let Some(t) = &target {
             props.insert(*pw::keys::TARGET_OBJECT, t.as_str());
         }
-        let stream = pw::stream::StreamBox::new(&core, "EQ Box Analyser", props)
+        let stream = pw::stream::StreamBox::new(&core, "SP-10 Spectrum Analyser", props)
             .map_err(pw_err("Couldn't create the capture stream"))?;
 
         let _format = stream

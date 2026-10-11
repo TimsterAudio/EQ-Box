@@ -21,7 +21,7 @@
 The code is a Cargo workspace:
 
 - **`crates/eq-core`**: everything with no UI or audio-API code. Both the app and the Windows engine are built on it.
-- **the apps** (the root package, `src/`): a library (`src/lib.rs`) with two programs, `eq-box` (`src/main.rs`) and `eq-box-analyser` (`src/bin/eq-box-analyser.rs`)
+- **the apps** (the root package, `src/`): a library (`src/lib.rs`) with two programs, `eq-box` (`src/main.rs`) and `sp-10`, the SP-10 Spectrum Analyser (`src/bin/sp-10.rs`)
 - **`crates/eq-box-apo`**: the Windows system-wide engine DLL.
 
 | File | What it does |
@@ -38,9 +38,9 @@ The code is a Cargo workspace:
 | `eq-box-apo/examples/apo_harness.rs` | Loads the DLL through COM, as the Windows audio engine does, and checks the EQ on a test tone. CI runs it on Windows, and it also runs under Wine. |
 | `packaging/windows/*.ps1` | Setup: install the engine on an output (with a backup), remove it from all of them, and a read-only diagnostic report. The `.cmd` files run them as administrator with a double-click, and the app's Install / Add / Remove keys start them the same way. |
 | `audio/engine_setup.rs` | The app's side of setup: whether the engine is installed and running (from the DLL and its status file), and starting the setup scripts. |
-| `ui/spectrum.rs` | Draws a spectrum in a colour scheme (`Scheme`) and style (`Look`). Used by the response graph and the analyser app. |
-| `ui/analyser_app.rs` | EQ Box Analyser (`src/bin/eq-box-analyser.rs`): the spectrum as a curve, bars or LED columns, with its own control strip (scaled to fit narrow windows, hidden with H). |
-| `audio/capture.rs` | Listen-only input for the analyser app: an output's monitor (PipeWire) or loopback (WASAPI), or an input device. Nothing is played back. |
+| `ui/spectrum.rs` | Draws a spectrum in a colour scheme (`Scheme`) and style (`Look`). Used by the response graph and SP-10. |
+| `ui/analyser_app.rs` | SP-10 Spectrum Analyser (`src/bin/sp-10.rs`): the spectrum as a curve, bars or LED columns, with its own control strip (scaled to fit narrow windows, hidden with H). |
+| `audio/capture.rs` | Listen-only input for SP-10: an output's monitor (PipeWire) or loopback (WASAPI), or an input device. Nothing is played back. |
 | `analyzer.rs` | An 8192-point FFT with a Hann window and adjustable ballistics (rise, fall, peak hold), read at any frequency span. |
 | `audio/mod.rs` | The backend list, device lists, `start()` and `Processor`, which meters, equalises and feeds the analyser. |
 | `audio/pipewire_sink.rs` | Two PipeWire streams in one link group: an `Audio/Sink` node called "EQ Box", and a playback stream to the chosen output. They're joined by a ring buffer, the same shape as `pw-loopback`. |

@@ -8,10 +8,12 @@
 - Windows engine: install it from EQ Box (Install / Add / Remove under System) or by double-clicking the `.cmd` files, with no PowerShell typing. The display shows whether the engine is installed and running.
 - Windows engine: an output's own driver effect (speaker tuning, "enhancements") is kept and runs after EQ Box's EQ, instead of having to be switched off.
 - Windows engine: the event log only gets start-up, stream starts and problems.
-- New filter types: high-pass (HPF), low-pass (LPF) and notch, on a second row of type keys. They have a fixed shape (12 dB per octave for HPF and LPF), so a band's gain doesn't apply to them, and they fade in and out when switched. Presets with `HP`, `HPQ`, `LP`, `LPQ` and `NO` filters now load, and EQ Box saves them in that format.
+- New filter types: high-pass (HPF), low-pass (LPF) and notch. They have a fixed shape (12 dB per octave for HPF and LPF), so a band's gain doesn't apply to them, and they fade in and out when switched. Presets with `HP`, `HPQ`, `LP`, `LPQ` and `NO` filters now load, and EQ Box saves them in that format.
+- Each band's filter type is chosen with a stepped **Type** knob (amber), with the type shown in a red readout under it, instead of a row of keys. The gain fader is taller as a result.
+- **Auto** preamp: a key next to Preamp that keeps the overall response's highest point at 0 dB, so boosts can't clip. It turns the preamp down for boosts and up for cuts, and follows every change. Turning the Preamp knob switches it off.
 - Each band's On key lights up in the band's colour, instead of having an LED.
 - Analyser colours: the **Colour** tab on the Response frame picks red, amber, green, ice, white, rainbow (bass to treble) or heat (by level), and the **Style** tab picks fill and line, line only, or fill only.
-- **EQ Box Analyser**, a separate program: the spectrum analyser on its own, listening to what an output plays or to an input. Curve, bars or LED views at 1/3, 1/6 or 1/12 octave; the same colour schemes; adjustable rise, fall and peak hold; range and slope; and for any screen, a resizable window with hideable controls, full screen and always-on-top.
+- **SP-10 Spectrum Analyser**, a separate program (`sp-10`) that doesn't need EQ Box: the spectrum analyser on its own, listening to what an output plays or to an input. Curve, bars or LED views at 1/3, 1/6 or 1/12 octave; the same colour schemes; adjustable rise, fall and peak hold; range and slope; and for any screen, a resizable window with hideable controls, full screen and always-on-top.
 
 ## 0.1.0 – 2026-10-10
 

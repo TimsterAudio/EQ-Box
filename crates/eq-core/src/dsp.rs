@@ -310,6 +310,37 @@ pub fn total_response_db(bands: &[BandParams], preamp_db: f32, freq: f64, sample
         + preamp_db as f64
 }
 
+/// The highest point of the bands' combined response (without the preamp),
+/// in dB, between 20 Hz and 20 kHz. Each band's own frequency is checked
+/// too, so a narrow peak is never missed between sample points.
+pub fn peak_response_db(bands: &[BandParams], sample_rate: f64) -> f64 {
+    const POINTS: usize = 240;
+    let coeffs: Vec<Coeffs> = bands
+        .iter()
+        .map(|b| Coeffs::for_band(&b.clamped(), sample_rate))
+        .collect();
+    let at = |f: f64| -> f64 { coeffs.iter().map(|c| c.magnitude_db(f, sample_rate)).sum() };
+    let (lo, hi) = (FREQ_MIN as f64, (FREQ_MAX as f64).min(sample_rate * 0.49));
+    let sweep = (0..POINTS).map(|i| lo * (hi / lo).powf(i as f64 / (POINTS - 1) as f64));
+    let centres = bands
+        .iter()
+        .map(|b| b.freq as f64)
+        .filter(|f| (lo..=hi).contains(f));
+    sweep
+        .chain(centres)
+        .map(at)
+        .fold(f64::NEG_INFINITY, f64::max)
+}
+
+/// The preamp that brings the response's highest point to 0 dB: a cut when
+/// the bands boost, a lift when they only cut. Within the preamp's range,
+/// to 0.1 dB.
+pub fn auto_preamp_db(bands: &[BandParams], sample_rate: f64) -> f32 {
+    let p = -peak_response_db(bands, sample_rate) as f32;
+    // (+ 0.0 turns -0.0 into 0.0, so the readout never shows "-0.0".)
+    ((p * 10.0).round() / 10.0).clamp(PREAMP_MIN_DB, PREAMP_MAX_DB) + 0.0
+}
+
 /// Transposed direct form II, one channel.
 #[derive(Clone, Copy, Default)]
 struct BiquadState {
@@ -614,6 +645,39 @@ mod tests {
         let mut later = tone(4800, 9600);
         eq.process(&mut later, &s);
         assert!(peak(&later[2400..]) < 0.01, "fully on after 150 ms");
+    }
+
+    #[test]
+    fn auto_preamp_keeps_the_peak_at_zero() {
+        let mut b = default_bands();
+        assert_eq!(auto_preamp_db(&b, FS), 0.0, "flat");
+        b[5].gain_db = 6.0;
+        assert!((auto_preamp_db(&b, FS) + 6.0).abs() < 0.11, "one boost");
+        b[4].gain_db = 4.0; // overlaps band 6, so the peak is higher
+        assert!(auto_preamp_db(&b, FS) < -6.5);
+        let mut cuts = default_bands();
+        cuts[3].gain_db = -9.0;
+        cuts[0].gain_db = -3.0;
+        cuts[9].gain_db = -3.0;
+        // Only cuts: everything between them stays at 0 dB.
+        assert!(auto_preamp_db(&cuts, FS).abs() < 0.11);
+        let mut all = default_bands();
+        for x in &mut all {
+            x.gain_db = -24.0;
+        }
+        assert_eq!(
+            auto_preamp_db(&all, FS),
+            PREAMP_MAX_DB,
+            "lift, within range"
+        );
+        let mut narrow = default_bands();
+        narrow[2].gain_db = 12.0;
+        narrow[2].q = 20.0;
+        narrow[2].freq = 137.0;
+        assert!(
+            (auto_preamp_db(&narrow, FS) + 12.0).abs() < 0.11,
+            "narrow peak"
+        );
     }
 
     #[test]
