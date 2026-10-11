@@ -24,7 +24,7 @@ EQ Box uses Drone Box's panel language, so the two look like the same family of 
 | Band frequency, Q | **Knob**, green (tone family) |
 | Filter type (6 choices) | **Stepped knob**, amber (its own family colour), one tick per type, with the type in a red readout. Clockwise: LPF / LO SH / PEAK / HI SH / HPF / NOTCH. It sits in the knob column above Freq and Q |
 | Auto preamp | **Grey key** with LED, beside the Preamp knob |
-| Band on/off | **Lit key** with no LED: it glows green (RGB 0, 140, 100) when on, and is a dark lens when off. The gain readout sits level with it, with its legend level with "On" |
+| Band on/off | **Lit key** with no LED: it glows green (RGB 0, 150, 100) when on, and is a dark lens when off. The gain readout sits level with it, with its legend level with "On" |
 | Bypass | **Yellow key** with LED |
 | Run / Stop | **Red key** with LED, like Drone Box's Play / Stop |
 | Load / Save presets | **Cream keys**. Flat and Reset are **grey** (utility) keys |
