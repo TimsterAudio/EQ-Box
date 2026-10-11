@@ -14,6 +14,7 @@
 #![cfg(windows)]
 
 mod apo;
+mod events;
 mod settings_watch;
 mod status;
 
@@ -41,6 +42,16 @@ pub unsafe extern "system" fn DllGetClassObject(
     if *rclsid != CLSID_EQ_BOX_APO {
         return CLASS_E_CLASSNOTAVAILABLE;
     }
+    static LOGGED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let exe = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    events::log_limited(
+        &LOGGED,
+        1,
+        events::Level::Info,
+        &format!("loaded by {exe} (version {})", env!("CARGO_PKG_VERSION")),
+    );
     let factory: IClassFactory = apo::Factory.into();
     factory.query(riid, ppv)
 }

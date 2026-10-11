@@ -87,7 +87,8 @@ Section 'Engine status (written by the engine itself)'
 $found = $false
 foreach ($status in @(
         (Join-Path $SettingsDir 'engine-status.txt'),
-        (Join-Path $env:windir 'ServiceProfiles\LocalService\AppData\Local\Temp\engine-status.txt'))) {
+        (Join-Path $env:windir 'ServiceProfiles\LocalService\AppData\Local\Temp\engine-status.txt'),
+        (Join-Path $env:windir 'Temp\engine-status.txt'))) {
     if (Test-Path -LiteralPath $status) {
         $found = $true
         Write-Host ("{0}" -f $status)
@@ -98,4 +99,13 @@ foreach ($status in @(
 }
 if (-not $found) {
     Write-Host 'No status file in either place: the engine has not been created since this build was installed.'
+}
+
+Section 'Engine messages (Application event log, newest last)'
+$events = @(Get-EventLog -LogName Application -Source 'EQ Box' -Newest 40 -ErrorAction SilentlyContinue)
+if ($events.Count -eq 0) {
+    Write-Host 'None: the engine has not reported anything.'
+} else {
+    [array]::Reverse($events)
+    foreach ($e in $events) { Write-Host ("{0:HH:mm:ss}  {1,-11} {2}" -f $e.TimeGenerated, $e.EntryType, $e.Message) }
 }

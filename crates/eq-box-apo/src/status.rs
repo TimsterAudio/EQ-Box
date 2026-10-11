@@ -23,6 +23,8 @@ pub static SETTINGS_UNREADABLE: AtomicU64 = AtomicU64::new(0);
 pub static FORMAT_QUERIES: AtomicU32 = AtomicU32::new(0);
 pub static LOCK_FAILURES: AtomicU32 = AtomicU32::new(0);
 pub static FORMATS_REFUSED: AtomicU32 = AtomicU32::new(0);
+pub static FORMATS_REFUSED_LOGGED: AtomicU32 = AtomicU32::new(0);
+pub static FORMATS_ACCEPTED_LOGGED: AtomicU32 = AtomicU32::new(0);
 /// Why the settings file last failed to read (settings thread only).
 pub static LAST_READ_ERROR: Mutex<String> = Mutex::new(String::new());
 

@@ -1,6 +1,7 @@
 //! Keeps the engine's settings in step with the file the EQ Box window
 //! writes. One thread per process, shared by every engine instance.
 
+use crate::events::{self, Level};
 use crate::status;
 use eq_core::dsp::EqSettings;
 use eq_core::engine_settings;
@@ -24,11 +25,19 @@ pub fn shared() -> Arc<Shared> {
             let initial = match engine_settings::read_checked(&path) {
                 Ok(s) => {
                     status::SETTINGS_READS.fetch_add(1, Relaxed);
+                    events::log(
+                        Level::Info,
+                        &format!("read settings from {}", path.display()),
+                    );
                     s
                 }
                 Err(e) => {
                     status::SETTINGS_UNREADABLE.fetch_add(1, Relaxed);
                     status::set_read_error(&e);
+                    events::log(
+                        Level::Error,
+                        &format!("cannot read settings {}: {e}", path.display()),
+                    );
                     EqSettings::default()
                 }
             };
@@ -48,6 +57,9 @@ fn watch(path: std::path::PathBuf, shared: Arc<Shared>) {
     let status_path = path.with_file_name(status::FILE_NAME);
     let mut seen: Option<SystemTime> = modified(&path);
     let mut ticks = 0u32;
+    let mut status_write_failed = false;
+    let mut audio_logged = false;
+    let mut last_error = String::new();
     loop {
         std::thread::sleep(POLL);
         ticks += 1;
@@ -59,7 +71,23 @@ fn watch(path: std::path::PathBuf, shared: Arc<Shared>) {
             if let Err(e) = std::fs::write(&status_path, &report) {
                 let fallback = std::env::temp_dir().join(status::FILE_NAME);
                 let note = format!("could not write {}: {e}\r\n", status_path.display());
+                if !status_write_failed {
+                    status_write_failed = true;
+                    events::log(
+                        Level::Warning,
+                        &format!("{}; trying {}", note.trim_end(), fallback.display()),
+                    );
+                }
                 let _ = std::fs::write(fallback, report + &note);
+            }
+            // Say once when audio starts flowing through the engine.
+            let buffers = status::BUFFERS.load(Relaxed);
+            if !audio_logged && buffers > 0 {
+                audio_logged = true;
+                events::log(
+                    Level::Info,
+                    &format!("audio is flowing through the engine ({buffers} buffers so far)"),
+                );
             }
         }
         let now = modified(&path);
@@ -71,7 +99,10 @@ fn watch(path: std::path::PathBuf, shared: Arc<Shared>) {
         match engine_settings::read_checked(&path) {
             Ok(s) => {
                 shared.store(&s);
-                status::SETTINGS_READS.fetch_add(1, Relaxed);
+                if status::SETTINGS_READS.fetch_add(1, Relaxed) < 3 || !last_error.is_empty() {
+                    events::log(Level::Info, "settings updated from the EQ Box window");
+                }
+                last_error.clear();
                 seen = now;
             }
             Err(_) if now.is_none() => {
@@ -82,6 +113,13 @@ fn watch(path: std::path::PathBuf, shared: Arc<Shared>) {
             Err(e) => {
                 status::SETTINGS_UNREADABLE.fetch_add(1, Relaxed);
                 status::set_read_error(&e);
+                if e != last_error {
+                    events::log(
+                        Level::Error,
+                        &format!("cannot read settings {}: {e}", path.display()),
+                    );
+                    last_error = e;
+                }
             }
         }
     }

@@ -174,6 +174,11 @@ if (-not (Test-Path -LiteralPath $aclBackup)) {
 # --- Registry -------------------------------------------------------------
 Write-Host 'Registering the engine...'
 
+# The engine reports what it's doing to the Application event log.
+if (-not [System.Diagnostics.EventLog]::SourceExists('EQ Box')) {
+    New-EventLog -LogName Application -Source 'EQ Box'
+}
+
 # COM class
 $c = "HKLM:\SOFTWARE\Classes\CLSID\$ClsidText"
 New-Item -Force -Path $c | Out-Null

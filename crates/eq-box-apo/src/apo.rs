@@ -7,6 +7,7 @@
 //! stream stops. Nothing here may panic: a panic would take down the
 //! Windows audio engine.
 
+use crate::events::{self, Level};
 use crate::settings_watch;
 use crate::status;
 use crate::CLSID_EQ_BOX_APO;
@@ -79,7 +80,8 @@ pub struct EqBoxApo {
 
 impl EqBoxApo {
     fn new() -> Self {
-        status::CREATED.fetch_add(1, Relaxed);
+        let n = status::CREATED.fetch_add(1, Relaxed) + 1;
+        events::log(Level::Info, &format!("engine instance {n} created"));
         EqBoxApo {
             state: Mutex::new(State {
                 initialized: false,
@@ -112,6 +114,19 @@ fn float_format(t: &IAudioMediaType) -> Result<Format> {
             f.dwBytesPerSampleContainer,
             f.guidFormatType == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT,
         );
+        events::log_limited(
+            &status::FORMATS_REFUSED_LOGGED,
+            10,
+            Level::Warning,
+            &format!(
+                "refused format: {:?} {}-bit in {}-byte container, {} ch, {} Hz",
+                f.guidFormatType,
+                f.dwValidBitsPerSample,
+                f.dwBytesPerSampleContainer,
+                f.dwSamplesPerFrame,
+                f.fFramesPerSecond
+            ),
+        );
         return Err(APOERR_FORMAT_NOT_SUPPORTED.into());
     }
     Ok(Format {
@@ -129,10 +144,29 @@ fn check_format(
     let req = requested.ok()?;
     let f = float_format(req)?;
     if let Some(opp) = opposite.as_ref() {
-        if float_format(opp)? != f {
+        let o = float_format(opp)?;
+        if o != f {
+            events::log_limited(
+                &status::FORMATS_REFUSED_LOGGED,
+                10,
+                Level::Warning,
+                &format!(
+                    "refused format: input and output differ ({} ch {} Hz vs {} ch {} Hz)",
+                    f.channels, f.rate, o.channels, o.rate
+                ),
+            );
             return Err(APOERR_FORMAT_NOT_SUPPORTED.into());
         }
     }
+    events::log_limited(
+        &status::FORMATS_ACCEPTED_LOGGED,
+        5,
+        Level::Info,
+        &format!(
+            "accepted format: 32-bit float, {} ch, {} Hz",
+            f.channels, f.rate
+        ),
+    );
     Ok(req.clone())
 }
 
@@ -191,6 +225,10 @@ impl IAudioProcessingObject_Impl for EqBoxApo_Impl {
         }
         st.initialized = true;
         status::INITIALIZED.fetch_add(1, Relaxed);
+        events::log(
+            Level::Info,
+            &format!("initialised ({_cbdatasize} bytes of setup data)"),
+        );
         Ok(())
     }
 
@@ -262,10 +300,18 @@ impl IAudioProcessingObjectConfiguration_Impl for EqBoxApo_Impl {
             status::LOCKED.fetch_add(1, Relaxed);
             status::RATE.store(in_fmt.rate as u32, Relaxed);
             status::CHANNELS.store(in_fmt.channels, Relaxed);
+            events::log(
+                Level::Info,
+                &format!("stream started: {} ch, {} Hz", in_fmt.channels, in_fmt.rate),
+            );
             Ok(())
         })();
-        if result.is_err() {
+        if let Err(e) = &result {
             status::LOCK_FAILURES.fetch_add(1, Relaxed);
+            events::log(
+                Level::Error,
+                &format!("could not start the stream (LockForProcess): {e}"),
+            );
         }
         result
     }

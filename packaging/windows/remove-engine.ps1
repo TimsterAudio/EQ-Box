@@ -94,6 +94,9 @@ if (Test-Path -LiteralPath $global) {
 }
 
 # Registrations
+if ([System.Diagnostics.EventLog]::SourceExists('EQ Box')) {
+    Remove-EventLog -Source 'EQ Box' -ErrorAction SilentlyContinue
+}
 Remove-Item -LiteralPath "HKLM:\SOFTWARE\Classes\AudioEngine\AudioProcessingObjects\$ClsidText" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath "HKLM:\SOFTWARE\Classes\CLSID\$ClsidText" -Recurse -Force -ErrorAction SilentlyContinue
 
