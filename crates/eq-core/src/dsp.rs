@@ -22,20 +22,51 @@ pub enum FilterKind {
     Peak,
     LowShelf,
     HighShelf,
+    /// Cuts everything below the frequency (12 dB per octave).
+    HighPass,
+    /// Cuts everything above the frequency (12 dB per octave).
+    LowPass,
+    /// Removes a narrow band around the frequency.
+    Notch,
 }
 
 impl FilterKind {
-    pub const ALL: [FilterKind; 3] = [
+    /// In panel order: clockwise on each band's Type knob.
+    pub const ALL: [FilterKind; 6] = [
+        FilterKind::LowPass,
         FilterKind::LowShelf,
         FilterKind::Peak,
         FilterKind::HighShelf,
+        FilterKind::HighPass,
+        FilterKind::Notch,
     ];
 
     pub fn short(self) -> &'static str {
         match self {
-            FilterKind::Peak => "BELL",
+            FilterKind::Peak => "PEAK",
             FilterKind::LowShelf => "LO SH",
             FilterKind::HighShelf => "HI SH",
+            FilterKind::HighPass => "HPF",
+            FilterKind::LowPass => "LPF",
+            FilterKind::Notch => "NOTCH",
+        }
+    }
+
+    /// Whether the band's gain does anything. High-pass, low-pass and notch
+    /// filters have a fixed shape; the band's On key switches them.
+    pub fn has_gain(self) -> bool {
+        matches!(
+            self,
+            FilterKind::Peak | FilterKind::LowShelf | FilterKind::HighShelf
+        )
+    }
+
+    /// The Q a band of this type starts with.
+    pub fn default_q(self) -> f32 {
+        match self {
+            FilterKind::Peak => 1.0,
+            FilterKind::Notch => 2.0,
+            _ => 0.707,
         }
     }
 
@@ -44,6 +75,9 @@ impl FilterKind {
             FilterKind::Peak => 0,
             FilterKind::LowShelf => 1,
             FilterKind::HighShelf => 2,
+            FilterKind::HighPass => 3,
+            FilterKind::LowPass => 4,
+            FilterKind::Notch => 5,
         }
     }
 
@@ -51,6 +85,9 @@ impl FilterKind {
         match i {
             1 => FilterKind::LowShelf,
             2 => FilterKind::HighShelf,
+            3 => FilterKind::HighPass,
+            4 => FilterKind::LowPass,
+            5 => FilterKind::Notch,
             _ => FilterKind::Peak,
         }
     }
@@ -78,6 +115,16 @@ impl BandParams {
     pub fn effective_gain(&self) -> f32 {
         if self.enabled {
             self.gain_db
+        } else {
+            0.0
+        }
+    }
+
+    /// How much of the filter is applied (0 or 1). The types with gain
+    /// switch off through their gain instead, so for them it's always 1.
+    pub fn mix(&self) -> f64 {
+        if self.enabled || self.kind.has_gain() {
+            1.0
         } else {
             0.0
         }
@@ -131,8 +178,10 @@ impl Coeffs {
 
     /// RBJ "Audio EQ Cookbook" designs. Shelves use the Q form, which is what
     /// APO-format presets' `LSC`/`HSC` filters use, so imported presets match.
+    /// `gain_db` is ignored by the types without gain (see
+    /// [`FilterKind::has_gain`]).
     pub fn design(kind: FilterKind, freq: f64, gain_db: f64, q: f64, sample_rate: f64) -> Coeffs {
-        if gain_db.abs() < 1e-6 || sample_rate <= 0.0 {
+        if sample_rate <= 0.0 || (kind.has_gain() && gain_db.abs() < 1e-6) {
             return Coeffs::IDENTITY;
         }
         let freq = freq.clamp(1.0, sample_rate * 0.499);
@@ -173,6 +222,30 @@ impl Coeffs {
                     (a + 1.0) - (a - 1.0) * cos_w0 - sq,
                 )
             }
+            FilterKind::HighPass => (
+                (1.0 + cos_w0) / 2.0,
+                -(1.0 + cos_w0),
+                (1.0 + cos_w0) / 2.0,
+                1.0 + alpha,
+                -2.0 * cos_w0,
+                1.0 - alpha,
+            ),
+            FilterKind::LowPass => (
+                (1.0 - cos_w0) / 2.0,
+                1.0 - cos_w0,
+                (1.0 - cos_w0) / 2.0,
+                1.0 + alpha,
+                -2.0 * cos_w0,
+                1.0 - alpha,
+            ),
+            FilterKind::Notch => (
+                1.0,
+                -2.0 * cos_w0,
+                1.0,
+                1.0 + alpha,
+                -2.0 * cos_w0,
+                1.0 - alpha,
+            ),
         };
         Coeffs {
             b0: b0 / a0,
@@ -191,6 +264,24 @@ impl Coeffs {
             band.q as f64,
             sample_rate,
         )
+        .blend(band.mix())
+    }
+
+    /// `mix` of this filter and `1 - mix` of a straight wire: the same
+    /// poles, with the zeros moved part way. Fades the types without gain
+    /// in and out without a click.
+    pub fn blend(self, mix: f64) -> Coeffs {
+        if mix >= 1.0 {
+            return self;
+        }
+        let m = mix.max(0.0);
+        Coeffs {
+            b0: (1.0 - m) + m * self.b0,
+            b1: (1.0 - m) * self.a1 + m * self.b1,
+            b2: (1.0 - m) * self.a2 + m * self.b2,
+            a1: self.a1,
+            a2: self.a2,
+        }
     }
 
     /// Magnitude response in dB at `freq`.
@@ -219,6 +310,37 @@ pub fn total_response_db(bands: &[BandParams], preamp_db: f32, freq: f64, sample
         + preamp_db as f64
 }
 
+/// The highest point of the bands' combined response (without the preamp),
+/// in dB, between 20 Hz and 20 kHz. Each band's own frequency is checked
+/// too, so a narrow peak is never missed between sample points.
+pub fn peak_response_db(bands: &[BandParams], sample_rate: f64) -> f64 {
+    const POINTS: usize = 240;
+    let coeffs: Vec<Coeffs> = bands
+        .iter()
+        .map(|b| Coeffs::for_band(&b.clamped(), sample_rate))
+        .collect();
+    let at = |f: f64| -> f64 { coeffs.iter().map(|c| c.magnitude_db(f, sample_rate)).sum() };
+    let (lo, hi) = (FREQ_MIN as f64, (FREQ_MAX as f64).min(sample_rate * 0.49));
+    let sweep = (0..POINTS).map(|i| lo * (hi / lo).powf(i as f64 / (POINTS - 1) as f64));
+    let centres = bands
+        .iter()
+        .map(|b| b.freq as f64)
+        .filter(|f| (lo..=hi).contains(f));
+    sweep
+        .chain(centres)
+        .map(at)
+        .fold(f64::NEG_INFINITY, f64::max)
+}
+
+/// The preamp that brings the response's highest point to 0 dB: a cut when
+/// the bands boost, a lift when they only cut. Within the preamp's range,
+/// to 0.1 dB.
+pub fn auto_preamp_db(bands: &[BandParams], sample_rate: f64) -> f32 {
+    let p = -peak_response_db(bands, sample_rate) as f32;
+    // (+ 0.0 turns -0.0 into 0.0, so the readout never shows "-0.0".)
+    ((p * 10.0).round() / 10.0).clamp(PREAMP_MIN_DB, PREAMP_MAX_DB) + 0.0
+}
+
 /// Transposed direct form II, one channel.
 #[derive(Clone, Copy, Default)]
 struct BiquadState {
@@ -243,6 +365,7 @@ struct SmoothedBand {
     log_freq: f64,
     gain_db: f64,
     log_q: f64,
+    mix: f64,
 }
 
 impl SmoothedBand {
@@ -252,6 +375,7 @@ impl SmoothedBand {
             log_freq: (p.freq as f64).ln(),
             gain_db: p.effective_gain() as f64,
             log_q: (p.q as f64).ln(),
+            mix: p.mix(),
         }
     }
 
@@ -263,6 +387,7 @@ impl SmoothedBand {
             (&mut self.log_freq, target.log_freq, 1e-5),
             (&mut self.gain_db, target.gain_db, 1e-4),
             (&mut self.log_q, target.log_q, 1e-5),
+            (&mut self.mix, target.mix, 1e-5),
         ] {
             let d = tgt - *cur;
             if d.abs() > eps {
@@ -283,6 +408,7 @@ impl SmoothedBand {
             self.log_q.exp(),
             sample_rate,
         )
+        .blend(self.mix)
     }
 }
 
@@ -451,6 +577,114 @@ mod tests {
         let hs = Coeffs::design(FilterKind::HighShelf, 5000.0, -12.0, 0.707, FS);
         assert!((hs.magnitude_db(20_000.0, FS) + 12.0).abs() < 0.3);
         assert!(hs.magnitude_db(100.0, FS).abs() < 0.1);
+    }
+
+    #[test]
+    fn cut_filters_have_their_shape() {
+        let hp = Coeffs::design(FilterKind::HighPass, 100.0, 0.0, 0.707, FS);
+        assert!((hp.magnitude_db(100.0, FS) + 3.01).abs() < 0.05);
+        assert!(
+            (hp.magnitude_db(50.0, FS) + 12.3).abs() < 0.5,
+            "12 dB/octave"
+        );
+        assert!(hp.magnitude_db(5000.0, FS).abs() < 0.01);
+        let lp = Coeffs::design(FilterKind::LowPass, 5000.0, 6.0, 0.707, FS);
+        assert!(
+            (lp.magnitude_db(5000.0, FS) + 3.01).abs() < 0.05,
+            "gain ignored"
+        );
+        assert!(lp.magnitude_db(100.0, FS).abs() < 0.01);
+        assert!(lp.magnitude_db(15_000.0, FS) < -15.0);
+        let no = Coeffs::design(FilterKind::Notch, 1000.0, 0.0, 4.0, FS);
+        assert!(no.magnitude_db(1000.0, FS) < -60.0);
+        assert!(no.magnitude_db(500.0, FS).abs() < 0.2);
+        assert!(no.magnitude_db(2000.0, FS).abs() < 0.2);
+    }
+
+    #[test]
+    fn switched_off_cut_filter_is_flat() {
+        for kind in [FilterKind::HighPass, FilterKind::LowPass, FilterKind::Notch] {
+            let b = BandParams {
+                enabled: false,
+                kind,
+                freq: 1000.0,
+                gain_db: 0.0,
+                q: 0.707,
+            };
+            let c = Coeffs::for_band(&b, FS);
+            for f in [30.0, 1000.0, 15_000.0] {
+                assert!(c.magnitude_db(f, FS).abs() < 1e-9, "{kind:?} at {f}");
+            }
+            let on = Coeffs::for_band(&BandParams { enabled: true, ..b }, FS);
+            assert!(on.magnitude_db(1000.0, FS) < -2.9, "{kind:?} on");
+        }
+    }
+
+    #[test]
+    fn switching_a_cut_filter_on_fades_in() {
+        // A low-pass at 200 Hz switched on while a 5 kHz tone plays: the
+        // tone must fade over milliseconds, not drop in one sample.
+        let mut eq = Equalizer::new(FS, 1);
+        let mut s = EqSettings::default();
+        s.bands[5].kind = FilterKind::LowPass;
+        s.bands[5].freq = 200.0;
+        s.bands[5].enabled = false;
+        let tone = |n: usize, off: usize| -> Vec<f32> {
+            (0..n)
+                .map(|i| (2.0 * PI * 5000.0 * (i + off) as f64 / FS).sin() as f32)
+                .collect()
+        };
+        let mut warm = tone(4800, 0);
+        eq.process(&mut warm, &s);
+        s.bands[5].enabled = true;
+        let mut buf = tone(4800, 4800);
+        eq.process(&mut buf, &s);
+        let peak = |b: &[f32]| b.iter().fold(0f32, |m, x| m.max(x.abs()));
+        assert!(peak(&buf[..48]) > 0.8, "no instant drop");
+        assert!(peak(&buf[4000..]) < peak(&buf[..48]) * 0.2, "fading");
+        let mut later = tone(4800, 9600);
+        eq.process(&mut later, &s);
+        assert!(peak(&later[2400..]) < 0.01, "fully on after 150 ms");
+    }
+
+    #[test]
+    fn auto_preamp_keeps_the_peak_at_zero() {
+        let mut b = default_bands();
+        assert_eq!(auto_preamp_db(&b, FS), 0.0, "flat");
+        b[5].gain_db = 6.0;
+        assert!((auto_preamp_db(&b, FS) + 6.0).abs() < 0.11, "one boost");
+        b[4].gain_db = 4.0; // overlaps band 6, so the peak is higher
+        assert!(auto_preamp_db(&b, FS) < -6.5);
+        let mut cuts = default_bands();
+        cuts[3].gain_db = -9.0;
+        cuts[0].gain_db = -3.0;
+        cuts[9].gain_db = -3.0;
+        // Only cuts: everything between them stays at 0 dB.
+        assert!(auto_preamp_db(&cuts, FS).abs() < 0.11);
+        let mut all = default_bands();
+        for x in &mut all {
+            x.gain_db = -24.0;
+        }
+        assert_eq!(
+            auto_preamp_db(&all, FS),
+            PREAMP_MAX_DB,
+            "lift, within range"
+        );
+        let mut narrow = default_bands();
+        narrow[2].gain_db = 12.0;
+        narrow[2].q = 20.0;
+        narrow[2].freq = 137.0;
+        assert!(
+            (auto_preamp_db(&narrow, FS) + 12.0).abs() < 0.11,
+            "narrow peak"
+        );
+    }
+
+    #[test]
+    fn kind_indexes_round_trip() {
+        for k in FilterKind::ALL {
+            assert_eq!(FilterKind::from_index(k.to_index()), k);
+        }
     }
 
     #[test]

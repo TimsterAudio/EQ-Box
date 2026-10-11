@@ -57,7 +57,7 @@ foreach ($file in $backups) {
         if (-not $saved.FxExisted) {
             Remove-Item -LiteralPath $fx -Recurse -Force
         } else {
-            foreach ($name in @($PkeyEfx, $PkeyEfxModes)) {
+            foreach ($name in @($PkeyEfx, $PkeyEfxModes, $PkeyChained)) {
                 Remove-ItemProperty -LiteralPath $fx -Name $name -ErrorAction SilentlyContinue
             }
             foreach ($p in $saved.Values.PSObject.Properties) {
@@ -79,6 +79,7 @@ foreach ($file in $backups) {
 # Devices with EQ Box but no backup (shouldn't happen) just lose EQ Box.
 foreach ($o in $orphans) {
     Remove-ItemProperty -LiteralPath "$($o.Key)\FxProperties" -Name $PkeyEfx -ErrorAction SilentlyContinue
+    Remove-ItemProperty -LiteralPath "$($o.Key)\FxProperties" -Name $PkeyChained -ErrorAction SilentlyContinue
 }
 
 # The protected-audio setting, as it was before

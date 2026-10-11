@@ -1,9 +1,11 @@
 //! The EQ Box panel.
 
 use super::graph::{self, fmt_freq};
+use super::spectrum::{self, Look, Scheme};
 use super::theme::*;
 use super::widgets::*;
 use crate::analyzer::Analyzer;
+use crate::audio::engine_setup::{self, EngineState, Setup};
 use crate::audio::{self, BackendInfo, DeviceLists, Running, StartRequest};
 use crate::dsp::*;
 use crate::shared::{analyzer_channel, Shared};
@@ -24,6 +26,8 @@ const STORAGE_KEY: &str = "eq-box";
 struct Saved {
     bands: [BandParams; NUM_BANDS],
     preamp_db: f32,
+    /// The preamp follows the bands, keeping the response's peak at 0 dB.
+    auto_preamp: bool,
     bypass: bool,
     preset_name: String,
     backend: Option<String>,
@@ -33,6 +37,8 @@ struct Saved {
     panel: PanelKind,
     knobs: KnobStyle,
     analyser: bool,
+    analyser_scheme: Scheme,
+    analyser_fill: Look,
     running: bool,
     selected: usize,
     last_dir: Option<PathBuf>,
@@ -43,6 +49,7 @@ impl Default for Saved {
         Saved {
             bands: default_bands(),
             preamp_db: 0.0,
+            auto_preamp: false,
             bypass: false,
             preset_name: "Flat".into(),
             backend: None,
@@ -52,6 +59,8 @@ impl Default for Saved {
             panel: PanelKind::Black,
             knobs: KnobStyle::Colour,
             analyser: true,
+            analyser_scheme: Scheme::default(),
+            analyser_fill: Look::default(),
             running: false,
             selected: 5,
             last_dir: None,
@@ -65,6 +74,15 @@ const GAIN: Spec = Spec {
     default: 0.0,
     log: false,
     step: 0.1,
+};
+/// The filter type knob: one step per type, clockwise in `FilterKind::ALL`
+/// order.
+const TYPE: Spec = Spec {
+    min: 0.0,
+    max: (FilterKind::ALL.len() - 1) as f32,
+    default: 2.0, // peak
+    log: false,
+    step: 1.0,
 };
 const PREAMP: Spec = Spec {
     min: PREAMP_MIN_DB,
@@ -92,7 +110,7 @@ fn freq_spec(default: f32) -> Spec {
 }
 
 fn q_spec(kind: FilterKind) -> Spec {
-    let default = if kind == FilterKind::Peak { 1.0 } else { 0.707 };
+    let default = kind.default_q();
     Spec {
         min: Q_MIN,
         max: Q_MAX,
@@ -126,6 +144,12 @@ pub struct EqApp {
     touched: Option<(String, String, f64)>,
     notice: Option<(String, f64)>,
     peaks_db: [f32; 4],
+    /// The Windows system-wide engine, checked once a second while
+    /// "Windows (system-wide)" is chosen.
+    engine: EngineState,
+    engine_checked: f64,
+    /// A setup script waiting on Windows' permission prompt.
+    setup: Option<std::process::Child>,
 }
 
 impl EqApp {
@@ -162,6 +186,9 @@ impl EqApp {
             touched: None,
             notice: None,
             peaks_db: [-90.0; 4],
+            engine: EngineState::NotInstalled,
+            engine_checked: f64::NEG_INFINITY,
+            setup: None,
         };
         app.refresh_devices();
         if let Some(path) = std::env::args_os().nth(1) {
@@ -263,6 +290,47 @@ impl EqApp {
 
     fn notify(&mut self, msg: impl Into<String>) {
         self.notice = Some((msg.into(), now()));
+    }
+
+    fn is_win_engine(&self) -> bool {
+        self.s.backend.as_deref() == Some(audio::WINDOWS_ENGINE)
+    }
+
+    /// Keeps `engine` current while the Windows engine is chosen, and
+    /// reports on a setup script once Windows' permission prompt closes.
+    fn watch_engine(&mut self, ctx: &egui::Context) {
+        if let Some(child) = self.setup.as_mut() {
+            if let Some(result) = engine_setup::launch_result(child) {
+                self.setup = None;
+                match result {
+                    Ok(()) => self.notify("Setup is running in its own window"),
+                    Err(e) => self.notify(e),
+                }
+            }
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        if !self.is_win_engine() {
+            return;
+        }
+        let t = now();
+        if t - self.engine_checked >= 1.0 {
+            self.engine_checked = t;
+            self.engine = engine_setup::engine_state();
+        }
+        ctx.request_repaint_after(std::time::Duration::from_secs(1));
+    }
+
+    fn run_setup(&mut self, what: Setup) {
+        if self.setup.is_some() {
+            return;
+        }
+        match engine_setup::launch(what) {
+            Ok(child) => {
+                self.setup = Some(child);
+                self.notify("Windows will ask for permission");
+            }
+            Err(e) => self.notify(e),
+        }
     }
 
     // ------------------------------------------------------------ presets
@@ -381,6 +449,7 @@ impl eframe::App for EqApp {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(16));
         }
+        self.watch_engine(ui.ctx());
 
         // Keyboard shortcuts (not while a control has focus).
         let free = ui.memory(|m| m.focused().is_none());
@@ -437,7 +506,7 @@ impl eframe::App for EqApp {
     }
 }
 
-fn set_visuals(ctx: &egui::Context, th: &Theme) {
+pub(crate) fn set_visuals(ctx: &egui::Context, th: &Theme) {
     let mut v = egui::Visuals::dark();
     v.window_fill = Color32::from_rgb(0x1f, 0x1f, 0x1f);
     v.panel_fill = th.panel;
@@ -452,7 +521,7 @@ fn set_visuals(ctx: &egui::Context, th: &Theme) {
     }
 }
 
-fn draw_panel_bg(p: &egui::Painter, rect: Rect, th: &Theme) {
+pub(crate) fn draw_panel_bg(p: &egui::Painter, rect: Rect, th: &Theme) {
     p.rect_filled(rect, 0, th.panel);
     if th.silver {
         // Faint brushed texture.
@@ -546,6 +615,16 @@ impl EqApp {
             .sample_rate
             .load(std::sync::atomic::Ordering::Relaxed);
         let line2 = match (&self.running, &self.audio_error) {
+            (Some(r), _) if self.is_win_engine() => (
+                r.description.clone(),
+                match self.engine {
+                    EngineState::NotInstalled => "NO ENGINE".into(),
+                    EngineState::Idle => "ENGINE IDLE".into(),
+                    EngineState::Active if rate > 0 => format!("{rate} HZ"),
+                    EngineState::Active => "ENGINE ON".into(),
+                    EngineState::Outdated => "UPDATE ENGINE".into(),
+                },
+            ),
             (Some(r), _) => (
                 r.description.clone(),
                 if rate > 0 {
@@ -608,24 +687,27 @@ impl EqApp {
             let lr = |a: f32, b: f32| [a, b];
             meter(
                 p,
-                Rect::from_min_size(at(964.0, 26.0), Vec2::new(160.0, 16.0)),
+                Rect::from_min_size(at(948.0, 26.0), Vec2::new(160.0, 16.0)),
                 lr(self.peaks_db[0], self.peaks_db[1]),
             );
             meter(
                 p,
-                Rect::from_min_size(at(964.0, 50.0), Vec2::new(160.0, 16.0)),
+                Rect::from_min_size(at(948.0, 50.0), Vec2::new(160.0, 16.0)),
                 lr(self.peaks_db[2], self.peaks_db[3]),
             );
-            legend(p, at(956.0, 34.0), Align2::RIGHT_CENTER, "In", th);
-            legend(p, at(956.0, 58.0), Align2::RIGHT_CENTER, "Out", th);
-            legend(p, at(1044.0, 74.0), Align2::CENTER_TOP, "Level L / R", th);
+            legend(p, at(940.0, 34.0), Align2::RIGHT_CENTER, "In", th);
+            legend(p, at(940.0, 58.0), Align2::RIGHT_CENTER, "Out", th);
+            legend(p, at(1028.0, 74.0), Align2::CENTER_TOP, "Level L / R", th);
         }
 
-        // Preamp
+        // Preamp, and Auto, which keeps the response's peak at 0 dB
+        if self.s.auto_preamp {
+            self.s.preamp_db = auto_preamp_db(&self.s.bands, 48_000.0);
+        }
         let mut pre = self.s.preamp_db;
         if knob(
             ui,
-            at(1178.0, 44.0),
+            at(1150.0, 44.0),
             20.0,
             Id::new("preamp"),
             &mut pre,
@@ -635,22 +717,49 @@ impl EqApp {
         )
         .changed()
         {
+            // Turning the knob takes over from Auto.
+            self.s.auto_preamp = false;
             self.s.preamp_db = pre;
             self.touch("Preamp", fmt_db(pre));
         }
         legend(
             ui.painter(),
-            at(1178.0, 74.0),
+            at(1150.0, 74.0),
             Align2::CENTER_TOP,
             "Preamp",
             th,
         );
         readout(
             ui.painter(),
-            at(1178.0, 90.0),
+            at(1150.0, 90.0),
             &fmt_db(self.s.preamp_db),
             64.0,
         );
+        let r = Rect::from_min_size(at(1180.0, 46.0), Vec2::new(36.0, 18.0));
+        if key(
+            ui,
+            r,
+            Id::new("auto-preamp"),
+            K_GREY,
+            Some(self.s.auto_preamp),
+            "Auto",
+            th,
+        )
+        .clicked()
+        {
+            self.s.auto_preamp = !self.s.auto_preamp;
+            if self.s.auto_preamp {
+                self.s.preamp_db = auto_preamp_db(&self.s.bands, 48_000.0);
+            }
+            self.touch(
+                "Auto preamp",
+                if self.s.auto_preamp {
+                    fmt_db(self.s.preamp_db)
+                } else {
+                    "off".into()
+                },
+            );
+        }
 
         // Panel and knob switches
         let group = |ui: &Ui, x: f32, label: &str| {
@@ -664,13 +773,13 @@ impl EqApp {
                 2.0,
             );
         };
-        group(ui, 1272.0, "PANEL");
-        group(ui, 1382.0, "KNOBS");
+        group(ui, 1284.0, "PANEL");
+        group(ui, 1392.0, "KNOBS");
         let sw: [(&str, bool, f32); 4] = [
-            ("Black", self.s.panel == PanelKind::Black, 1226.0),
-            ("Silver", self.s.panel == PanelKind::Silver, 1274.0),
-            ("Colour", self.s.knobs == KnobStyle::Colour, 1336.0),
-            ("Pointer", self.s.knobs == KnobStyle::Pointer, 1384.0),
+            ("Black", self.s.panel == PanelKind::Black, 1238.0),
+            ("Silver", self.s.panel == PanelKind::Silver, 1286.0),
+            ("Colour", self.s.knobs == KnobStyle::Colour, 1346.0),
+            ("Pointer", self.s.knobs == KnobStyle::Pointer, 1394.0),
         ];
         for (i, (label, on, x)) in sw.iter().enumerate() {
             let r = Rect::from_min_size(at(*x, 46.0), Vec2::new(42.0, 18.0));
@@ -742,6 +851,11 @@ impl EqApp {
             &mut self.s.selected,
             rate,
             self.s.analyser.then_some(&self.analyzer),
+            spectrum::Style {
+                scheme: self.s.analyser_scheme,
+                fill: self.s.analyser_fill,
+                strength: 0.4,
+            },
         );
         if let Some(i) = res.changed {
             let b = s.bands[i];
@@ -756,39 +870,32 @@ impl EqApp {
         }
         self.s.bands = s.bands;
 
-        // Analyser tab on the top edge, at the right.
-        let tab = Rect::from_min_size(
-            Pos2::new(rect.right() - 128.0, rect.top() - 9.0),
-            Vec2::new(112.0, 18.0),
-        );
-        let resp = ui.interact(tab, Id::new("analyser-tab"), egui::Sense::click());
-        let p = ui.painter();
-        p.rect_filled(tab, CornerRadius::same(3), th.panel);
-        p.rect_stroke(
-            tab,
-            CornerRadius::same(3),
-            Stroke::new(1.0, if resp.hovered() { FOCUS } else { th.frame }),
-            StrokeKind::Inside,
-        );
-        led(
-            p,
-            Pos2::new(tab.left() + 11.0, tab.center().y),
-            self.s.analyser,
-        );
-        text(
-            p,
-            Pos2::new(tab.left() + 22.0, tab.center().y),
-            Align2::LEFT_CENTER,
+        // Analyser tabs on the top edge, at the right: its colours, its
+        // style, and on / off.
+        let y = rect.top() - 9.0;
+        let r = Rect::from_min_size(Pos2::new(rect.right() - 128.0, y), Vec2::new(112.0, 18.0));
+        if frame_tab(
+            ui,
+            r,
+            "analyser-tab",
+            Some(self.s.analyser),
             "ANALYSER",
-            font(F_LEGEND_BOLD, 11.0),
-            th.legend,
-            1.8,
-        );
-        if resp
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .clicked()
-        {
+            None,
+            th,
+        ) {
             self.s.analyser = !self.s.analyser;
+        }
+        let r = Rect::from_min_size(Pos2::new(rect.right() - 276.0, y), Vec2::new(140.0, 18.0));
+        let fill = self.s.analyser_fill.name();
+        if frame_tab(ui, r, "analyser-fill", None, "STYLE", Some(fill), th) {
+            self.s.analyser_fill = self.s.analyser_fill.next();
+            self.touch("Analyser style", self.s.analyser_fill.name());
+        }
+        let r = Rect::from_min_size(Pos2::new(rect.right() - 410.0, y), Vec2::new(126.0, 18.0));
+        let scheme = self.s.analyser_scheme.name();
+        if frame_tab(ui, r, "analyser-colour", None, "COLOUR", Some(scheme), th) {
+            self.s.analyser_scheme = self.s.analyser_scheme.next();
+            self.touch("Analyser colour", self.s.analyser_scheme.name());
         }
     }
 
@@ -920,6 +1027,25 @@ impl EqApp {
                 56.0,
             );
         }
+        if is_win_engine {
+            // Setup for the system-wide engine, where the Buffer knob would be.
+            let install = match self.engine {
+                EngineState::NotInstalled => "Install",
+                EngineState::Outdated => "Update",
+                _ => "Add",
+            };
+            let r = Rect::from_min_size(Pos2::new(x0, ky - 6.0), Vec2::new(52.0, 18.0));
+            if key(ui, r, Id::new("engine-install"), K_CREAM, None, install, th).clicked() {
+                self.run_setup(Setup::Install);
+            }
+            if self.engine != EngineState::NotInstalled {
+                // Where Dropouts would be (the engine has none to count).
+                let r = Rect::from_min_size(Pos2::new(x0 + 174.0, ky - 6.0), Vec2::new(52.0, 18.0));
+                if key(ui, r, Id::new("engine-remove"), K_GREY, None, "Remove", th).clicked() {
+                    self.run_setup(Setup::Remove);
+                }
+            }
+        }
         let kr = Rect::from_min_size(Pos2::new(x0 + 78.0, ky - 6.0), Vec2::new(52.0, 18.0));
         if key(ui, kr, Id::new("rescan"), K_GREY, None, "Rescan", th).clicked() {
             self.refresh_devices();
@@ -932,7 +1058,7 @@ impl EqApp {
                 ),
             );
         }
-        {
+        if !is_win_engine {
             let p = ui.painter();
             let drops = self
                 .shared
@@ -951,9 +1077,19 @@ impl EqApp {
         // Help or error text
         let help = if let Some(e) = self.audio_error.as_ref().or(self.device_error.as_ref()) {
             (e.clone(), LED)
+        } else if is_win_engine && self.engine == EngineState::NotInstalled {
+            (
+                "EQ Box's engine isn't installed yet. Press Install, allow Windows' permission prompt, and pick your output in the window that opens. Every app on that output then goes through EQ Box, with no virtual cable.".to_string(),
+                th.legend_dim,
+            )
+        } else if is_win_engine && self.engine == EngineState::Outdated {
+            (
+                "The engine installed in Windows is older than this EQ Box, so some settings (such as the HPF, LPF and notch filters) have no effect. Press Update, allow Windows' permission prompt, and pick the same output to install the new engine.".to_string(),
+                LED,
+            )
         } else if is_win_engine {
             (
-                "EQ Box's engine runs inside Windows and equalises every app on the outputs it's installed on (see install-engine.ps1). Run sends your settings to it, and they stay set after EQ Box closes. Use Bypass to switch the EQ off.".to_string(),
+                "EQ Box's engine runs inside Windows and equalises every app on the outputs it's installed on (Add puts it on another, Remove takes it off them all). Run sends your settings to it, and they stay set after EQ Box closes. Use Bypass to switch the EQ off.".to_string(),
                 th.legend_dim,
             )
         } else if is_pw_sink {
@@ -1022,36 +1158,45 @@ impl EqApp {
         let mut touched: Option<(&str, String)> = None;
         let mut interacted = false;
 
-        // Filter type: LED key row
+        // Filter type: a stepped knob, with the type in its display
         let kinds = FilterKind::ALL;
-        let kw = 38.0;
-        let x0 = rect.center().x - (kw * 3.0 + 12.0) / 2.0;
-        for (k, kind) in kinds.iter().enumerate() {
-            let r = Rect::from_min_size(
-                Pos2::new(x0 + k as f32 * (kw + 6.0), rect.top() + 36.0),
-                Vec2::new(kw, 14.0),
-            );
-            if key(
-                ui,
-                r,
-                Id::new(("type", i, k)),
-                K_ORANGE,
-                Some(b.kind == *kind),
-                kind.short(),
-                th,
-            )
-            .clicked()
-            {
-                b.kind = *kind;
-                touched = Some(("Type", kind.short().to_string()));
-                interacted = true;
-            }
+        let mut t = kinds.iter().position(|k| *k == b.kind).unwrap_or(1) as f32;
+        // In the knob column, over Freq and Q.
+        let tx = rect.right() - 46.0;
+        let resp = knob(
+            ui,
+            Pos2::new(tx, rect.top() + 46.0),
+            17.0,
+            Id::new(("type", i)),
+            &mut t,
+            &TYPE,
+            Some(FAM_TYPE),
+            th,
+        );
+        interacted |= resp.is_pointer_button_down_on();
+        let kind = kinds[(t.round() as usize).min(kinds.len() - 1)];
+        if kind != b.kind {
+            b.kind = kind;
+            touched = Some(("Type", kind.short().to_string()));
         }
+        legend(
+            ui.painter(),
+            Pos2::new(tx, rect.top() + 68.0),
+            Align2::CENTER_TOP,
+            "Type",
+            th,
+        );
+        readout(
+            ui.painter(),
+            Pos2::new(tx, rect.top() + 84.0),
+            b.kind.short(),
+            60.0,
+        );
 
         // Gain fader
         let fr = Rect::from_min_size(
-            Pos2::new(rect.left() + 14.0, rect.top() + 80.0),
-            Vec2::new(36.0, 186.0),
+            Pos2::new(rect.left() + 14.0, rect.top() + 26.0),
+            Vec2::new(36.0, 244.0),
         );
         let resp = fader(
             ui,
@@ -1066,18 +1211,23 @@ impl EqApp {
         if resp.changed() {
             touched = Some(("Gain", fmt_db(b.gain_db)));
         }
+        // The gain readout lines up with the On key, its legend with "On".
         let cx_f = fr.center().x;
         legend(
             ui.painter(),
-            Pos2::new(cx_f, rect.top() + 272.0),
+            Pos2::new(cx_f, rect.top() + 301.0),
             Align2::CENTER_TOP,
             "Gain",
             th,
         );
         readout(
             ui.painter(),
-            Pos2::new(cx_f, rect.top() + 288.0),
-            &format!("{:+.1}", b.gain_db),
+            Pos2::new(cx_f, rect.top() + 279.0),
+            &if b.kind.has_gain() {
+                format!("{:+.1}", b.gain_db)
+            } else {
+                "--".to_string()
+            },
             50.0,
         );
 
@@ -1085,7 +1235,7 @@ impl EqApp {
         let cx = rect.right() - 46.0;
         let resp = knob(
             ui,
-            Pos2::new(cx, rect.top() + 104.0),
+            Pos2::new(cx, rect.top() + 133.0),
             19.0,
             Id::new(("freq", i)),
             &mut b.freq,
@@ -1099,21 +1249,21 @@ impl EqApp {
         }
         legend(
             ui.painter(),
-            Pos2::new(cx, rect.top() + 130.0),
+            Pos2::new(cx, rect.top() + 157.0),
             Align2::CENTER_TOP,
             "Freq",
             th,
         );
         readout(
             ui.painter(),
-            Pos2::new(cx, rect.top() + 146.0),
+            Pos2::new(cx, rect.top() + 173.0),
             &fmt_hz(b.freq),
             72.0,
         );
 
         let resp = knob(
             ui,
-            Pos2::new(cx, rect.top() + 196.0),
+            Pos2::new(cx, rect.top() + 217.0),
             19.0,
             Id::new(("q", i)),
             &mut b.q,
@@ -1127,14 +1277,14 @@ impl EqApp {
         }
         legend(
             ui.painter(),
-            Pos2::new(cx, rect.top() + 222.0),
+            Pos2::new(cx, rect.top() + 241.0),
             Align2::CENTER_TOP,
             "Q",
             th,
         );
         readout(
             ui.painter(),
-            Pos2::new(cx, rect.top() + 238.0),
+            Pos2::new(cx, rect.top() + 256.0),
             &format!("{:.2}", b.q),
             56.0,
         );
@@ -1144,17 +1294,7 @@ impl EqApp {
             Pos2::new(cx - 20.0, rect.top() + 280.0),
             Vec2::new(40.0, 16.0),
         );
-        if key(
-            ui,
-            r,
-            Id::new(("on", i)),
-            K_CREAM,
-            Some(b.enabled),
-            "On",
-            th,
-        )
-        .clicked()
-        {
+        if lit_key(ui, r, Id::new(("on", i)), ON_GREEN, b.enabled, "On", th).clicked() {
             b.enabled = !b.enabled;
             touched = Some(("", if b.enabled { "on".into() } else { "off".into() }));
             interacted = true;

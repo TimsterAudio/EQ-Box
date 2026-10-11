@@ -1,6 +1,6 @@
 # EQ Box
 
-**Timster's Audio Works – EQ Box v0.1.0**: a native ten-band parametric equaliser for Windows and Linux, with the same Jupiter-style panel as Drone Box.
+**Timster's Audio Works – EQ Box v0.2.0**: a native ten-band parametric equaliser for Windows and Linux, with the same Jupiter-style panel as Drone Box.
 
 ![EQ Box with an AutoEQ preset loaded and pink noise playing](docs/screenshot.png)
 
@@ -10,18 +10,19 @@ It's a real desktop program written in Rust (egui for the panel). It isn't an HT
 
 Get the latest version from the [Releases page](https://github.com/TimsterAudio/EQ-Box/releases/latest):
 
-- **Linux:** `eq-box-…-linux-x86_64.tar.gz`. Extract it and run `./eq-box`. It needs PipeWire 0.3.53 or newer (Ubuntu 24.04, Fedora 40, Arch or later). On older systems, build it yourself (see [Building](#building)).
-- **Windows:** `eq-box-…-windows-x86_64.zip` (WASAPI), or `…-windows-x86_64-asio.zip` with ASIO support as well. Extract it and run `eq-box.exe`.
+- **Linux:** `eq-box-…-linux-x86_64.tar.gz`. Extract it and run `./eq-box` (or `./sp-10` for the SP-10 Spectrum Analyser). It needs PipeWire 0.3.53 or newer (Ubuntu 24.04, Fedora 40, Arch or later). On older systems, build it yourself (see [Building](#building)).
+- **Windows:** `eq-box-…-windows-x86_64.zip` (WASAPI), or `…-windows-x86_64-asio.zip` with ASIO support as well. Extract it and run `eq-box.exe` (or `sp-10.exe` for the SP-10 Spectrum Analyser).
 
 ## What it does
 
-- **10 bands.** Each band can be a **bell** (peaking), **low shelf** or **high shelf** filter, with its own on/off key.
-- **Gain from +12 dB to −24 dB**, frequency from 20 Hz to 20 kHz, and **Q from 0.1 to 20**, plus a **preamp** (+12 / −24 dB) and a **bypass** for A/B checks.
-- **Loads APO-format EQ presets**, such as AutoEQ's `ParametricEQ.txt` files. It reads `Preamp:` and `Filter:` lines with the `PK`, `LS`/`LSC` and `HS`/`HSC` types, `Fc`, `Gain`, `Q` or `BW Oct`, and `ON`/`OFF`. It **saves** presets in the same format.
-- **Response graph:** each band's curve in its own colour, the overall response in red over them, and a live **spectrum analyser** of the output behind both. Drag a band's point to set its frequency and gain, and scroll over it to change Q.
+- **10 bands.** Each band can be a **peak** (bell), **low shelf**, **high shelf**, **high-pass**, **low-pass** or **notch** filter, with its own On key that lights up green.
+- **Gain from +12 dB to −24 dB**, frequency from 20 Hz to 20 kHz, and **Q from 0.1 to 20**, plus a **preamp** (+12 / −24 dB) with **Auto** (keeps the response's peak at 0 dB so nothing clips) and a **bypass** for A/B checks.
+- **Loads APO-format EQ presets**, such as AutoEQ's `ParametricEQ.txt` files. It reads `Preamp:` and `Filter:` lines with the `PK`, `LS`/`LSC`, `HS`/`HSC`, `HP`/`HPQ`, `LP`/`LPQ` and `NO` types, `Fc`, `Gain`, `Q` or `BW Oct`, and `ON`/`OFF`. It **saves** presets in the same format.
+- **Response graph:** each band's curve in its own colour, the overall response in red over them, and a live **spectrum analyser** of the output behind both, in a choice of colours. Drag a band's point to set its frequency and gain, and scroll over it to change Q.
 - **Audio systems:**
   - **Windows:** a **system-wide engine** (test build) that runs inside Windows' own audio engine and equalises every app with no virtual cable, plus **WASAPI** and **ASIO** (an optional build feature).
   - **Linux:** a **native PipeWire sink**. EQ Box shows up as an output called "EQ Box", so any app can play into it. It also has PipeWire and ALSA device modes.
+- **SP-10 Spectrum Analyser**, a separate program (`sp-10`): the spectrum analyser on its own, listening to what an output plays or to an input. It doesn't need EQ Box. See [SP-10](#sp-10-spectrum-analyser).
 - **Remembers everything:** bands, preset name, devices, panel and knob style, and whether audio was running.
 
 ## Using it
@@ -40,11 +41,24 @@ If you'd rather equalise a capture device, choose **PipeWire devices** or **ALSA
 
 EQ Box's engine can run inside Windows' own audio engine, so every app on an output is equalised with no extra software. The Windows download has a `system-wide-engine` folder:
 
-1. From an Administrator PowerShell in that folder, run `powershell -ExecutionPolicy Bypass -File .\install-engine.ps1`, then pick your output.
-2. In EQ Box, set **System** to **Windows (system-wide)** and press **Run / Stop**. Your settings go straight to the engine and stay set after EQ Box closes.
-3. `remove-engine.ps1` puts every device back exactly as it was.
+1. In EQ Box, set **System** to **Windows (system-wide)** and press **Install** (or double-click `Install system-wide engine.cmd`). Allow Windows' permission prompt, then pick your output.
+2. Press **Run / Stop**. Your settings go straight to the engine and stay set after EQ Box closes.
+3. **Remove** (or `Remove system-wide engine.cmd`) puts every device back exactly as it was.
+
+If the output already has its own effect from its driver, EQ Box keeps it and runs it after the EQ.
 
 Apps using exclusive mode or ASIO bypass it, as they do with other EQ software. See `system-wide-engine/README.txt` and [docs/WINDOWS_APO_PLAN.md](docs/WINDOWS_APO_PLAN.md).
+
+### SP-10 Spectrum Analyser
+
+`sp-10` (`sp-10.exe` on Windows) is a spectrum analyser on its own, in the same panel style. It's a separate program that doesn't need EQ Box installed or running: on Windows the `.exe` can be copied anywhere by itself. It only listens and never plays anything, so it can't feed back.
+
+- **Source:** the default output (whatever is playing), any other output, or an input such as a microphone. Outputs are heard through PipeWire's monitors on Linux and WASAPI loopback on Windows.
+- **View:** a curve, bars or LED columns, at 1/3, 1/6 or 1/12 octave.
+- **Colour** and **Style:** the same schemes as EQ Box's analyser (red, amber, green, ice, white, rainbow, heat), filled, line or both.
+- **Motion:** **Rise** and **Fall** times, and **Hold** for peak markers (off at 0).
+- **Scale:** the **Range** shown below 0 dBFS (40 to 120 dB), and the **Slope** in dB per octave (3 makes pink noise read flat).
+- **For any screen:** the window resizes freely. **H** hides the controls (double-click the display to bring them back), **F11** or **Full** goes full screen, **On top** keeps it above other windows, **Grid** shows or hides the scale, and **Space** freezes the display.
 
 ### Windows (WASAPI)
 
@@ -66,12 +80,13 @@ In an ASIO build, choose **ASIO** under **System**, then pick your interface as 
 |---|---|
 | Knobs and faders | Drag up or down (or left/right). Hold **Shift** for fine control. Scroll to step. Double-click to reset. With a control focused, the arrow keys, Page Up/Down and Home/End adjust it. |
 | Graph points | Drag to set frequency and gain (**Shift** for fine). Scroll for Q. Double-click for 0 dB. Right-click to switch the band on or off. |
-| Filter type | The **LO SH / BELL / HI SH** LED keys on each band. |
+| Filter type | Each band's **Type** knob steps clockwise through LPF, LO SH, PEAK, HI SH, HPF and NOTCH; the readout under it shows the choice. High-pass, low-pass and notch have no gain, so the band's gain readout shows `--`. |
+| Preamp | **Auto** keeps the response's highest point at 0 dB as you change the bands. Turning the knob takes over again. |
 | Keys | **Space**: bypass · **Ctrl+O**: load preset · **Ctrl+S**: save preset |
 | Presets | **Load** / **Save** keys, drop a preset file on the window, or pass one on the command line: `eq-box "HD 600 ParametricEQ.txt"`. |
 | Flat / Reset | **Flat** sets every gain and the preamp to 0 dB. **Reset** also restores the default band layout. |
 
-When a preset has more than ten filters, EQ Box loads the first ten. It skips filter types it doesn't have (such as low-pass or notch), and limits values that are outside the panel's ranges. The footer lists anything it changed.
+When a preset has more than ten filters, EQ Box loads the first ten. It skips filter types it doesn't have (such as band-pass or all-pass), and limits values that are outside the panel's ranges. The footer lists anything it changed.
 
 ## Building
 
@@ -89,9 +104,10 @@ sudo pacman -S pipewire alsa-lib clang
 
 cargo build --release
 ./target/release/eq-box
+./target/release/sp-10
 ```
 
-`packaging/linux/eq-box.desktop` is a launcher entry you can copy to `~/.local/share/applications/`.
+`packaging/linux/eq-box.desktop` and `sp-10.desktop` are launcher entries you can copy to `~/.local/share/applications/`.
 
 **Windows (WASAPI):**
 

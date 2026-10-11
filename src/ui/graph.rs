@@ -1,6 +1,7 @@
 //! The response display: a red-display graph with each band's curve, the
 //! total response, the analyser, and draggable band points.
 
+use super::spectrum;
 use super::theme::*;
 use super::widgets::{glow_text, text, wheel};
 use crate::analyzer::Analyzer;
@@ -44,8 +45,11 @@ impl Axes {
         let t = ((db - SPEC_BOTTOM) / (SPEC_TOP - SPEC_BOTTOM)).clamp(0.0, 1.0);
         self.plot.bottom() - t * self.plot.height()
     }
+    /// Where a band's point sits: at its gain, or on the 0 dB line for the
+    /// types without gain (high-pass, low-pass, notch).
     fn node(&self, b: &crate::dsp::BandParams) -> Pos2 {
-        Pos2::new(self.x(b.freq), self.y(b.gain_db))
+        let db = if b.kind.has_gain() { b.gain_db } else { 0.0 };
+        Pos2::new(self.x(b.freq), self.y(db))
     }
 }
 
@@ -69,6 +73,7 @@ pub fn graph(
     selected: &mut usize,
     sample_rate: f32,
     analyzer: Option<&Analyzer>,
+    analyser_style: spectrum::Style,
 ) -> GraphResult {
     let mut result = GraphResult { changed: None };
     let p = ui.painter().with_clip_rect(rect.expand(2.0));
@@ -167,20 +172,24 @@ pub fn graph(
     if let Some(an) = analyzer.filter(|a| a.active) {
         let mut x = plot.left();
         let mut pts = Vec::new();
+        let mut levels = Vec::new();
         while x <= plot.right() {
             let f0 = ax.f(x - 1.0);
             let f1 = ax.f(x + 1.0);
-            pts.push(Pos2::new(
-                x,
-                ax.spec_y(an.level(f0, f1, sample_rate) + tilt(ax.f(x))),
-            ));
+            let db = an.level(f0, f1, sample_rate) + tilt(ax.f(x));
+            pts.push(Pos2::new(x, ax.spec_y(db)));
+            levels.push(((db - SPEC_BOTTOM) / (SPEC_TOP - SPEC_BOTTOM)).clamp(0.0, 1.0));
             x += 2.0;
         }
-        fill_to(&p, &pts, plot.bottom(), LCD_INK.gamma_multiply(0.10));
-        p.add(Shape::line(
-            pts,
-            Stroke::new(1.0, LCD_INK.gamma_multiply(0.35)),
-        ));
+        spectrum::draw(
+            &p,
+            &pts,
+            &levels,
+            plot.left(),
+            plot.right(),
+            plot.bottom(),
+            analyser_style,
+        );
         for &(d, l) in &[(-24.0, "-24"), (-48.0, "-48"), (-72.0, "-72")] {
             text(
                 &p,
@@ -207,7 +216,7 @@ pub fn graph(
     let mut total = vec![s.preamp_db as f64; freqs.len()];
     for (bi, c) in coeffs.iter().enumerate() {
         let b = &s.bands[bi];
-        if !b.enabled || b.gain_db.abs() < 0.05 {
+        if !b.enabled || (b.kind.has_gain() && b.gain_db.abs() < 0.05) {
             continue;
         }
         let col = BAND_COLOURS[bi];
@@ -217,7 +226,11 @@ pub fn graph(
             .map(|(i, &f)| {
                 let m = c.magnitude_db(f, fs);
                 total[i] += m;
-                Pos2::new(plot.left() + i as f32 * 2.0, ax.y(m as f32))
+                // Cut filters fall away to nothing: stop just below the plot.
+                Pos2::new(
+                    plot.left() + i as f32 * 2.0,
+                    ax.y((m as f32).max(DB_BOTTOM - 4.0)),
+                )
             })
             .collect();
         let sel = bi == *selected;
@@ -307,7 +320,12 @@ pub fn graph(
                 (ax.f(target.x), ax.db(target.y))
             };
             let nf = snap3(nf.clamp(FREQ_MIN, FREQ_MAX));
-            let ng = ((ng * 10.0).round() / 10.0).clamp(GAIN_MIN_DB, GAIN_MAX_DB);
+            let ng = if b.kind.has_gain() {
+                ((ng * 10.0).round() / 10.0).clamp(GAIN_MIN_DB, GAIN_MAX_DB)
+            } else {
+                // Moving a cut filter's point up or down changes nothing.
+                b.gain_db
+            };
             if nf != b.freq || ng != b.gain_db {
                 b.freq = nf;
                 b.gain_db = ng;
@@ -416,12 +434,17 @@ pub fn graph(
         .or(hovered_node);
     if let Some(i) = tag_band {
         let b = &s.bands[i];
+        let gain = if b.kind.has_gain() {
+            format!("  {:+.1}DB", b.gain_db)
+        } else {
+            String::new()
+        };
         let label = format!(
-            "{} {}  {}HZ  {:+.1}DB  Q {:.2}{}",
+            "{} {}  {}HZ{}  Q {:.2}{}",
             i + 1,
             b.kind.short(),
             fmt_freq(b.freq),
-            b.gain_db,
+            gain,
             b.q,
             if b.enabled { "" } else { "  OFF" }
         );

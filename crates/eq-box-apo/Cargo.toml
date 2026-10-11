@@ -22,7 +22,10 @@ windows = { version = "0.62", features = [
     "Win32_Security",
     "Win32_System_Com",
     "Win32_System_Diagnostics_Debug",
+    "Win32_System_Com_StructuredStorage",
     "Win32_System_EventLog",
+    "Win32_System_Variant",
+    "Win32_UI_Shell_PropertiesSystem",
 ] }
 
 # The test harness (examples/apo_harness.rs) loads the DLL the way the
@@ -36,5 +39,9 @@ windows = { version = "0.62", features = [
     "Win32_Media_Audio_Apo",
     "Win32_Media_Multimedia",
     "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
     "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_Variant",
+    "Win32_UI_Shell_PropertiesSystem",
 ] }

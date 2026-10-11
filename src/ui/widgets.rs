@@ -415,6 +415,96 @@ pub fn key(
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// A tab on a section frame's top edge: an optional LED, a legend and an
+/// optional value in display red. Returns true when it's clicked.
+pub fn frame_tab(
+    ui: &mut Ui,
+    tab: Rect,
+    id: &str,
+    led_on: Option<bool>,
+    label: &str,
+    value: Option<&str>,
+    th: &Theme,
+) -> bool {
+    let resp = ui.interact(tab, Id::new(id), Sense::click());
+    let p = ui.painter();
+    p.rect_filled(tab, CornerRadius::same(3), th.panel);
+    p.rect_stroke(
+        tab,
+        CornerRadius::same(3),
+        Stroke::new(1.0, if resp.hovered() { FOCUS } else { th.frame }),
+        StrokeKind::Inside,
+    );
+    let mut x = tab.left() + 9.0;
+    if let Some(on) = led_on {
+        led(p, Pos2::new(tab.left() + 11.0, tab.center().y), on);
+        x = tab.left() + 22.0;
+    }
+    text(
+        p,
+        Pos2::new(x, tab.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        font(F_LEGEND_BOLD, 11.0),
+        th.legend,
+        1.8,
+    );
+    if let Some(v) = value {
+        glow_text(
+            p,
+            Pos2::new(tab.right() - 8.0, tab.center().y),
+            Align2::RIGHT_CENTER,
+            v,
+            font(F_MONO, 11.5),
+            LCD_INK,
+            0.3,
+        );
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+}
+
+/// A key with no LED that lights up itself, in `light`, when it's on. Off,
+/// it's a dark lens with a hint of its colour.
+pub fn lit_key(
+    ui: &mut Ui,
+    rect: Rect,
+    id: Id,
+    light: Color32,
+    on: bool,
+    label: &str,
+    th: &Theme,
+) -> Response {
+    let colour = if on {
+        KeyColour {
+            face: lerp_colour(light, Color32::WHITE, 0.22),
+            hi: lerp_colour(light, Color32::WHITE, 0.6),
+            lo: lerp_colour(light, Color32::BLACK, 0.08),
+            shadow: lerp_colour(light, Color32::BLACK, 0.6),
+        }
+    } else {
+        let base = lerp_colour(Color32::from_rgb(0x26, 0x25, 0x22), light, 0.14);
+        KeyColour {
+            face: base,
+            hi: lerp_colour(base, Color32::WHITE, 0.1),
+            lo: lerp_colour(base, Color32::BLACK, 0.3),
+            shadow: Color32::from_rgb(0x0e, 0x0e, 0x0d),
+        }
+    };
+    if on {
+        // The light spilling round the key.
+        let p = ui.painter();
+        for (grow, alpha) in [(10.0, 0.04), (6.0, 0.08), (3.0, 0.16)] {
+            p.rect_filled(
+                rect.expand(grow),
+                CornerRadius::same((grow + 2.0) as u8),
+                light.gamma_multiply(alpha),
+            );
+        }
+    }
+    key(ui, rect, id, colour, None, label, th)
+}
+
 /// Shared drag / scroll / keyboard handling for knobs and faders.
 fn adjust(ui: &mut Ui, resp: &mut Response, id: Id, v: &mut f32, spec: &Spec, travel_px: f32) {
     let shift = ui.input(|i| i.modifiers.shift);
@@ -521,11 +611,19 @@ pub fn knob(
         _ => th.tick,
     };
 
-    // Tick scale
-    for i in 0..=10 {
-        let a = (-135.0 + 27.0 * i as f32).to_radians();
+    // Tick scale: tenths, or one tick per position for a stepped knob
+    // with few positions (like the filter type).
+    let positions = (spec.max - spec.min) / spec.step.max(1e-6);
+    let stepped = !spec.log && spec.step > 0.0 && positions <= 8.0;
+    let n = if stepped {
+        positions.round() as usize
+    } else {
+        10
+    };
+    for i in 0..=n {
+        let a = (-135.0 + 270.0 * i as f32 / n as f32).to_radians();
         let d = Vec2::new(a.sin(), -a.cos());
-        let (r0, r1) = if i == 0 || i == 5 || i == 10 {
+        let (r0, r1) = if stepped || i == 0 || i == 5 || i == 10 {
             (r + 3.0, r + 8.0)
         } else {
             (r + 4.0, r + 7.0)

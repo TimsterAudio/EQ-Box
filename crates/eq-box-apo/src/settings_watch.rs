@@ -26,7 +26,7 @@ pub fn shared() -> Arc<Shared> {
                 Ok(s) => {
                     status::SETTINGS_READS.fetch_add(1, Relaxed);
                     events::log(
-                        Level::Info,
+                        Level::Debug,
                         &format!("read settings from {}", path.display()),
                     );
                     s
@@ -99,8 +99,12 @@ fn watch(path: std::path::PathBuf, shared: Arc<Shared>) {
         match engine_settings::read_checked(&path) {
             Ok(s) => {
                 shared.store(&s);
-                if status::SETTINGS_READS.fetch_add(1, Relaxed) < 3 || !last_error.is_empty() {
-                    events::log(Level::Info, "settings updated from the EQ Box window");
+                status::SETTINGS_READS.fetch_add(1, Relaxed);
+                status::set_read_error("");
+                if !last_error.is_empty() {
+                    events::log(Level::Info, "settings readable again");
+                } else {
+                    events::log(Level::Debug, "settings updated from the EQ Box window");
                 }
                 last_error.clear();
                 seen = now;

@@ -11,7 +11,7 @@
 //! Created on its own (outer is null), the object is its own outer object,
 //! so the same code serves both cases.
 
-use crate::apo::{self, Engine};
+use crate::apo::Engine;
 use core::ffi::c_void;
 use core::mem::offset_of;
 use std::sync::atomic::{fence, AtomicU32, Ordering};
@@ -156,11 +156,11 @@ unsafe extern "system" fn reset(this: *mut c_void) -> HRESULT {
     hresult(unsafe { object::<APO>(this) }.engine.reset())
 }
 
-unsafe extern "system" fn get_latency(_this: *mut c_void, latency: *mut i64) -> HRESULT {
+unsafe extern "system" fn get_latency(this: *mut c_void, latency: *mut i64) -> HRESULT {
     if latency.is_null() {
         return E_POINTER;
     }
-    unsafe { *latency = 0 };
+    unsafe { *latency = object::<APO>(this).engine.latency() };
     S_OK
 }
 
@@ -188,6 +188,8 @@ unsafe extern "system" fn initialize(this: *mut c_void, size: u32, data: *const 
 }
 
 unsafe fn format_supported(
+    engine: &Engine,
+    input: bool,
     opposite: *mut c_void,
     requested: *mut c_void,
     out: *mut *mut c_void,
@@ -198,7 +200,7 @@ unsafe fn format_supported(
     unsafe { *out = core::ptr::null_mut() };
     let opposite = unsafe { IAudioMediaType::from_raw_borrowed(&opposite) };
     let requested = unsafe { IAudioMediaType::from_raw_borrowed(&requested) };
-    match apo::check_format(opposite, requested) {
+    match engine.check_format(opposite, requested, input) {
         Ok(t) => {
             unsafe { *out = t.into_raw() };
             S_OK
@@ -208,21 +210,23 @@ unsafe fn format_supported(
 }
 
 unsafe extern "system" fn is_input_format_supported(
-    _this: *mut c_void,
+    this: *mut c_void,
     opposite: *mut c_void,
     requested: *mut c_void,
     out: *mut *mut c_void,
 ) -> HRESULT {
-    unsafe { format_supported(opposite, requested, out) }
+    let engine = unsafe { &object::<APO>(this).engine };
+    unsafe { format_supported(engine, true, opposite, requested, out) }
 }
 
 unsafe extern "system" fn is_output_format_supported(
-    _this: *mut c_void,
+    this: *mut c_void,
     opposite: *mut c_void,
     requested: *mut c_void,
     out: *mut *mut c_void,
 ) -> HRESULT {
-    unsafe { format_supported(opposite, requested, out) }
+    let engine = unsafe { &object::<APO>(this).engine };
+    unsafe { format_supported(engine, false, opposite, requested, out) }
 }
 
 unsafe extern "system" fn get_input_channel_count(this: *mut c_void, out: *mut u32) -> HRESULT {
@@ -330,7 +334,11 @@ static EFFECTS_VTBL: IAudioSystemEffects2_Vtbl = IAudioSystemEffects2_Vtbl {
 // ------------------------------------------------------------------ factory
 
 #[implement(IClassFactory)]
-pub struct Factory;
+pub struct Factory {
+    /// Whether engines it makes run the device's own effect after the EQ
+    /// (off only for the harness's test class, so it can't chain itself).
+    pub chains: bool,
+}
 
 impl IClassFactory_Impl for Factory_Impl {
     fn CreateInstance(
@@ -358,7 +366,7 @@ impl IClassFactory_Impl for Factory_Impl {
             effects: &EFFECTS_VTBL,
             refs: AtomicU32::new(1),
             outer: core::ptr::null_mut(),
-            engine: Engine::new(aggregated),
+            engine: Engine::new(aggregated, self.chains),
         }));
         unsafe {
             (*obj).outer = if aggregated {

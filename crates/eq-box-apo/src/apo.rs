@@ -7,6 +7,7 @@
 //! stream stops. Nothing here may panic: a panic would take down the
 //! Windows audio engine.
 
+use crate::chain::{self, Chained};
 use crate::events::{self, Level};
 use crate::settings_watch;
 use crate::status;
@@ -34,19 +35,23 @@ struct State {
     locked: bool,
     format: Option<Format>,
     eq: Option<Equalizer>,
+    /// The device's own effect, run after the EQ (see `chain.rs`).
+    chained: Option<Chained>,
 }
 
 /// The engine's state and logic, without the COM plumbing (see `com.rs`).
 pub struct Engine {
     state: Mutex<State>,
     shared: Arc<Shared>,
+    /// Whether to run the device's own effect after the EQ.
+    chains: bool,
 }
 
 impl Engine {
-    pub fn new(aggregated: bool) -> Self {
+    pub fn new(aggregated: bool, chains: bool) -> Self {
         let n = status::CREATED.fetch_add(1, Relaxed) + 1;
         events::log(
-            Level::Info,
+            Level::Debug,
             &format!(
                 "engine instance {n} created ({})",
                 if aggregated {
@@ -62,8 +67,10 @@ impl Engine {
                 locked: false,
                 format: None,
                 eq: None,
+                chained: None,
             }),
             shared: settings_watch::shared(),
+            chains,
         }
     }
 
@@ -110,7 +117,7 @@ fn float_format(t: &IAudioMediaType) -> Result<Format> {
 }
 
 /// EQ Box works in place, so input and output must be the same format.
-pub fn check_format(
+fn check_format(
     opposite: Option<&IAudioMediaType>,
     requested: Option<&IAudioMediaType>,
 ) -> Result<IAudioMediaType> {
@@ -135,7 +142,7 @@ pub fn check_format(
     events::log_limited(
         &status::FORMATS_ACCEPTED_LOGGED,
         5,
-        Level::Info,
+        Level::Debug,
         &format!(
             "accepted format: 32-bit float, {} ch, {} Hz",
             f.channels, f.rate
@@ -154,10 +161,44 @@ fn wide<const N: usize>(s: &str) -> [u16; N] {
 
 impl Engine {
     pub fn reset(&self) -> Result<()> {
-        if let Some(eq) = self.state().eq.as_mut() {
+        let mut st = self.state();
+        if let Some(eq) = st.eq.as_mut() {
             eq.reset();
         }
+        if let Some(c) = st.chained.as_ref() {
+            c.reset();
+        }
         Ok(())
+    }
+
+    pub fn latency(&self) -> i64 {
+        self.state().chained.as_ref().map_or(0, Chained::latency)
+    }
+
+    /// A format query (`input` says which side). The device's own effect,
+    /// if any, must take the format too; if it won't, EQ Box drops it
+    /// rather than stop the sound.
+    pub fn check_format(
+        &self,
+        opposite: Option<&IAudioMediaType>,
+        requested: Option<&IAudioMediaType>,
+        input: bool,
+    ) -> Result<IAudioMediaType> {
+        let t = check_format(opposite, requested)?;
+        let mut st = self.state();
+        if let Some(c) = st.chained.as_ref() {
+            if !c.accepts(opposite, &t, input) {
+                events::log(
+                    Level::Warning,
+                    &format!(
+                        "the device's own effect {:?} refused the format; running without it",
+                        c.clsid
+                    ),
+                );
+                st.chained = None;
+            }
+        }
+        Ok(t)
     }
 
     pub fn registration_properties(&self) -> Result<*mut APO_REG_PROPERTIES> {
@@ -186,18 +227,32 @@ impl Engine {
         Ok(p)
     }
 
-    pub fn initialize(&self, _cbdatasize: u32, _pbydata: *const u8) -> Result<()> {
-        // The data is the endpoint's property stores; EQ Box doesn't need
-        // them, its settings come from its own file.
+    pub fn initialize(&self, cbdatasize: u32, pbydata: *const u8) -> Result<()> {
+        // The data is the device's property stores. EQ Box's settings come
+        // from its own file; the stores only say which effect to chain.
+        let data: &[u8] = if pbydata.is_null() || cbdatasize == 0 {
+            &[]
+        } else {
+            unsafe { core::slice::from_raw_parts(pbydata, cbdatasize as usize) }
+        };
+        if self.state().initialized {
+            return Err(APOERR_ALREADY_INITIALIZED.into());
+        }
+        let chained = if self.chains {
+            chain::from_setup_data(data)
+        } else {
+            None
+        };
         let mut st = self.state();
         if st.initialized {
             return Err(APOERR_ALREADY_INITIALIZED.into());
         }
         st.initialized = true;
+        st.chained = chained;
         status::INITIALIZED.fetch_add(1, Relaxed);
         events::log(
-            Level::Info,
-            &format!("initialised ({_cbdatasize} bytes of setup data)"),
+            Level::Debug,
+            &format!("initialised ({cbdatasize} bytes of setup data)"),
         );
         Ok(())
     }
@@ -248,11 +303,25 @@ impl Engine {
             // Allocating here is fine: this isn't the real-time thread.
             st.eq = Some(Equalizer::new(in_fmt.rate as f64, in_fmt.channels as usize));
             st.format = Some(in_fmt);
+            if let Some(c) = st.chained.as_mut() {
+                if let Err(e) = c.lock(output, in_fmt.channels as usize) {
+                    events::log(
+                        Level::Warning,
+                        &format!(
+                            "the device's own effect {:?} could not start the stream ({e}); running without it",
+                            c.clsid
+                        ),
+                    );
+                    st.chained = None;
+                }
+            }
             st.locked = true;
             status::LOCKED.fetch_add(1, Relaxed);
             status::RATE.store(in_fmt.rate as u32, Relaxed);
             status::CHANNELS.store(in_fmt.channels, Relaxed);
-            events::log(
+            events::log_limited(
+                &status::STREAMS_LOGGED,
+                3,
                 Level::Info,
                 &format!("stream started: {} ch, {} Hz", in_fmt.channels, in_fmt.rate),
             );
@@ -274,6 +343,9 @@ impl Engine {
             return Err(APOERR_ALREADY_UNLOCKED.into());
         }
         st.locked = false;
+        if let Some(c) = st.chained.as_mut() {
+            c.unlock();
+        }
         status::LOCKED.fetch_sub(1, Relaxed);
         Ok(())
     }
@@ -303,26 +375,37 @@ impl Engine {
         };
         output.u32ValidFrameCount = input.u32ValidFrameCount;
         output.u32BufferFlags = input.u32BufferFlags;
-        if input.u32BufferFlags != BUFFER_VALID || input.pBuffer == 0 || output.pBuffer == 0 {
+        let valid =
+            input.u32BufferFlags == BUFFER_VALID && input.pBuffer != 0 && output.pBuffer != 0;
+        if valid {
+            status::BUFFERS.fetch_add(1, Relaxed);
+        } else {
             status::SILENT_BUFFERS.fetch_add(1, Relaxed);
-            return;
         }
-        status::BUFFERS.fetch_add(1, Relaxed);
 
         // Only ever contended if Windows breaks its own call rules; then
         // the audio passes through untouched rather than waiting.
-        let Ok(mut st) = self.state.try_lock() else {
+        let Ok(mut guard) = self.state.try_lock() else {
             return;
         };
+        let st = &mut *guard;
         let Some(eq) = st.eq.as_mut() else { return };
-        let n = input.u32ValidFrameCount as usize * eq.channels();
-        unsafe {
-            if input.pBuffer != output.pBuffer {
-                core::ptr::copy(input.pBuffer as *const f32, output.pBuffer as *mut f32, n);
+        let channels = eq.channels();
+        if valid {
+            let n = input.u32ValidFrameCount as usize * channels;
+            unsafe {
+                if input.pBuffer != output.pBuffer {
+                    core::ptr::copy(input.pBuffer as *const f32, output.pBuffer as *mut f32, n);
+                }
+                let buf = core::slice::from_raw_parts_mut(output.pBuffer as *mut f32, n);
+                let settings = self.shared.load();
+                eq.process(buf, &settings);
             }
-            let buf = core::slice::from_raw_parts_mut(output.pBuffer as *mut f32, n);
-            let settings = self.shared.load();
-            eq.process(buf, &settings);
+        }
+        // The device's own effect sees silent buffers too (it may have a
+        // tail to play out).
+        if let Some(c) = st.chained.as_mut() {
+            c.process(output, channels);
         }
     }
 
@@ -335,6 +418,14 @@ impl Engine {
         // EQ Box doesn't expose individual effects to Windows' settings UI.
         if ppeffectsids.is_null() || pceffects.is_null() {
             return Err(E_POINTER.into());
+        }
+        if let Some(r) = self
+            .state()
+            .chained
+            .as_ref()
+            .and_then(|c| c.effects_list(ppeffectsids, pceffects, _event))
+        {
+            return r;
         }
         unsafe {
             *ppeffectsids = core::ptr::null_mut();

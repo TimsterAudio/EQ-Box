@@ -19,16 +19,16 @@
     The output's endpoint id, such as {0.0.0.00000000}.{guid}. Leave it out
     to pick from a list.
 
-.PARAMETER Force
-    Install even if the output already has an endpoint effect from its
-    driver. That effect is backed up and comes back on removal, but is
-    switched off while EQ Box is installed.
+.PARAMETER NoChain
+    If the output already has an endpoint effect from its driver, switch it
+    off while EQ Box is installed instead of running it after EQ Box. Only
+    for a driver effect that misbehaves; it comes back on removal.
 #>
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
     [string]$DeviceId,
-    [switch]$Force
+    [switch]$NoChain
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,7 +39,7 @@ if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProces
     $ps64 = Join-Path $env:windir 'sysnative\WindowsPowerShell\v1.0\powershell.exe'
     $relaunch = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
     if ($DeviceId) { $relaunch += @('-DeviceId', $DeviceId) }
-    if ($Force) { $relaunch += '-Force' }
+    if ($NoChain) { $relaunch += '-NoChain' }
     & $ps64 @relaunch
     exit $LASTEXITCODE
 }
@@ -100,12 +100,6 @@ if ($device.EnhancementsOff) {
         'Turn them on in Settings > System > Sound > (device) > Audio enhancements.')
 }
 
-$existing = $device.EndpointEffect
-if ($existing -and $existing -ne $ClsidText -and -not $Force) {
-    throw ("This device already has an endpoint effect from its driver ($existing). " +
-        'Keeping driver effects alongside EQ Box comes in a later test step. ' +
-        'Try another device, or run again with -Force to replace it while EQ Box is installed (it is backed up and restored on removal).')
-}
 
 # --- Files ----------------------------------------------------------------
 New-Item -ItemType Directory -Force -Path $InstallDir, $BackupDir | Out-Null
@@ -171,6 +165,26 @@ if (-not (Test-Path -LiteralPath $aclBackup)) {
     @{ Key = $aclTarget; Sddl = (Get-KeySddl $aclTarget) } | ConvertTo-Json | Set-Content -Path $aclBackup -Encoding UTF8
 }
 
+# The driver's own endpoint effect, as it was before EQ Box (from the backup,
+# so a reinstall still finds it).
+$NoEffect = '{00000000-0000-0000-0000-000000000000}'
+$original = $null
+$originalModes = @()
+if ($savedDevice.Values -and $savedDevice.Values.$PkeyEfx) {
+    $original = [string]$savedDevice.Values.$PkeyEfx.Data
+    if ($original -eq $ClsidText -or $original -eq $NoEffect -or -not $original.Trim()) { $original = $null }
+}
+if ($savedDevice.Values -and $savedDevice.Values.$PkeyEfxModes) {
+    $originalModes = @($savedDevice.Values.$PkeyEfxModes.Data)
+}
+if ($original) {
+    if ($NoChain) {
+        Write-Host "The device's own effect $original is switched off while EQ Box is installed (-NoChain)."
+    } else {
+        Write-Host "Keeping the device's own effect $original`: it runs after EQ Box's EQ."
+    }
+}
+
 # --- Registry -------------------------------------------------------------
 Write-Host 'Registering the engine...'
 
@@ -203,7 +217,17 @@ Grant-KeyAccess $aclTarget
 $fxKey = "$($device.Key)\FxProperties"
 if (-not (Test-Path -LiteralPath $fxKey)) { New-Item -Path $fxKey | Out-Null }
 New-ItemProperty -Force -LiteralPath $fxKey -Name $PkeyEfx -Value $ClsidText -PropertyType String | Out-Null
-New-ItemProperty -Force -LiteralPath $fxKey -Name $PkeyEfxModes -Value @($ModeDefault) -PropertyType MultiString | Out-Null
+if ($original -and -not $NoChain) {
+    # EQ Box runs the driver's effect itself, in every mode the driver's
+    # effect offered.
+    New-ItemProperty -Force -LiteralPath $fxKey -Name $PkeyChained -Value $original -PropertyType String | Out-Null
+    $modes = @($originalModes | Where-Object { $_ })
+    if ($modes -notcontains $ModeDefault) { $modes = @($ModeDefault) + $modes }
+} else {
+    Remove-ItemProperty -LiteralPath $fxKey -Name $PkeyChained -ErrorAction SilentlyContinue
+    $modes = @($ModeDefault)
+}
+New-ItemProperty -Force -LiteralPath $fxKey -Name $PkeyEfxModes -Value ([string[]]$modes) -PropertyType MultiString | Out-Null
 
 # Let the audio engine load effects that aren't Microsoft-signed
 # (Not needed on every Windows version, so a failure here only warns.)

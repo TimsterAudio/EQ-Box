@@ -14,6 +14,7 @@
 #![cfg(windows)]
 
 mod apo;
+mod chain;
 mod com;
 mod events;
 mod settings_watch;
@@ -25,6 +26,11 @@ use windows_core::{Interface, GUID, HRESULT};
 
 /// EQ Box's engine CLSID. Never change it: installed systems point at it.
 pub const CLSID_EQ_BOX_APO: GUID = GUID::from_u128(0x0febc01a_a301_491f_bbcd_17284a13cb61);
+
+/// The same engine without chaining, which the test harness registers for
+/// itself and chains as a stand-in for a driver's effect. Setup never
+/// registers it.
+pub const CLSID_EQ_BOX_CHAIN_TEST: GUID = GUID::from_u128(0x0febc01a_a301_491f_bbcd_17284a13cb62);
 
 /// COM entry point: hands Windows the factory that makes the engine.
 ///
@@ -40,9 +46,11 @@ pub unsafe extern "system" fn DllGetClassObject(
         return E_POINTER;
     }
     *ppv = core::ptr::null_mut();
-    if *rclsid != CLSID_EQ_BOX_APO {
-        return CLASS_E_CLASSNOTAVAILABLE;
-    }
+    let chains = match *rclsid {
+        CLSID_EQ_BOX_APO => true,
+        CLSID_EQ_BOX_CHAIN_TEST => false,
+        _ => return CLASS_E_CLASSNOTAVAILABLE,
+    };
     static LOGGED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let exe = std::env::current_exe()
         .map(|p| p.display().to_string())
@@ -53,7 +61,7 @@ pub unsafe extern "system" fn DllGetClassObject(
         events::Level::Info,
         &format!("loaded by {exe} (version {})", env!("CARGO_PKG_VERSION")),
     );
-    let factory: IClassFactory = com::Factory.into();
+    let factory: IClassFactory = com::Factory { chains }.into();
     factory.query(riid, ppv)
 }
 

@@ -25,6 +25,7 @@ pub static LOCK_FAILURES: AtomicU32 = AtomicU32::new(0);
 pub static FORMATS_REFUSED: AtomicU32 = AtomicU32::new(0);
 pub static FORMATS_REFUSED_LOGGED: AtomicU32 = AtomicU32::new(0);
 pub static FORMATS_ACCEPTED_LOGGED: AtomicU32 = AtomicU32::new(0);
+pub static STREAMS_LOGGED: AtomicU32 = AtomicU32::new(0);
 /// Why the settings file last failed to read (settings thread only).
 pub static LAST_READ_ERROR: Mutex<String> = Mutex::new(String::new());
 
@@ -74,7 +75,10 @@ pub fn report(shared: &Shared, settings_path: &std::path::Path) -> String {
          last settings error: {err}\r\n\
          format queries: {queries}   formats refused: {nref} (last: {bits}-bit in {cont}-byte container, float {float})\r\n\
          lock failures: {lockfail}\r\n\
-         running as: {user}   PROGRAMDATA: {pd}   temp: {temp}\r\n",
+         running as: {user}   PROGRAMDATA: {pd}   temp: {temp}\r\n\
+         {level_line}{level}\r\n",
+        level_line = eq_core::engine_settings::LEVEL_LINE,
+        level = eq_core::engine_settings::ENGINE_LEVEL,
         pid = std::process::id(),
         err = LAST_READ_ERROR.lock().map(|s| if s.is_empty() { "none".to_string() } else { s.clone() }).unwrap_or_default(),
         queries = FORMAT_QUERIES.load(Relaxed),

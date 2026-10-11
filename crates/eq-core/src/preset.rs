@@ -131,6 +131,9 @@ fn parse_filter(rest: &str) -> FilterLine {
         "PK" | "PEQ" | "MODAL" => FilterKind::Peak,
         "LS" | "LSC" | "LSQ" => FilterKind::LowShelf,
         "HS" | "HSC" | "HSQ" => FilterKind::HighShelf,
+        "HP" | "HPQ" => FilterKind::HighPass,
+        "LP" | "LPQ" => FilterKind::LowPass,
+        "NO" => FilterKind::Notch,
         _ => return FilterLine::Unsupported(type_up),
     };
     // "LS 6dB", "LSC 12 dB" etc. give a slope instead of a Q.
@@ -219,6 +222,10 @@ fn parse_filter(rest: &str) -> FilterLine {
         // The format's fixed-slope shelves (6/12 dB per octave) are close
         // to these Qs at moderate gain.
         (FilterKind::Peak, _) => 1.0,
+        // A narrow notch; the format's own default is narrower than the
+        // panel allows.
+        (FilterKind::Notch, _) => crate::dsp::Q_MAX,
+        (FilterKind::HighPass | FilterKind::LowPass, _) => 0.707,
         (_, Some(s)) if s <= 6.0 => 0.5,
         _ => 0.707,
     });
@@ -262,14 +269,22 @@ pub fn export(bands: &[BandParams], preamp_db: f32) -> String {
             FilterKind::Peak => "PK",
             FilterKind::LowShelf => "LSC",
             FilterKind::HighShelf => "HSC",
+            FilterKind::HighPass => "HPQ",
+            FilterKind::LowPass => "LPQ",
+            FilterKind::Notch => "NO",
+        };
+        let gain = if b.kind.has_gain() {
+            format!(" Gain {:.1} dB", b.gain_db)
+        } else {
+            String::new()
         };
         s += &format!(
-            "Filter {}: {} {} Fc {} Hz Gain {:.1} dB Q {:.3}\n",
+            "Filter {}: {} {} Fc {} Hz{} Q {:.3}\n",
             i + 1,
             if b.enabled { "ON" } else { "OFF" },
             t,
             fmt_freq(b.freq),
-            b.gain_db,
+            gain,
             b.q
         );
     }
@@ -295,13 +310,14 @@ Filter 3: ON PK Fc 1.2 kHz Gain -2.0 dB Q 1.00
 Filter 4: ON HSC Fc 10000 Hz Gain -3.1 dB Q 0.70
 Filter 5: OFF PK Fc 500 Hz Gain 3 dB Q 1
 Filter 6: ON LP Fc 18000 Hz
+Filter 7: ON BP Fc 1000 Hz
 ";
 
     #[test]
     fn reads_autoeq_style_presets() {
         let p = parse(AUTOEQ);
         assert_eq!(p.preamp_db, -6.4);
-        assert_eq!(p.bands.len(), 5);
+        assert_eq!(p.bands.len(), 6);
         assert!(!p.bands[4].enabled);
         assert_eq!(p.bands[0].kind, FilterKind::LowShelf);
         assert_eq!(
@@ -311,7 +327,34 @@ Filter 6: ON LP Fc 18000 Hz
         assert_eq!(p.bands[1].kind, FilterKind::Peak);
         assert_eq!(p.bands[2].freq, 1200.0);
         assert_eq!(p.bands[3].kind, FilterKind::HighShelf);
-        assert!(p.warnings.iter().any(|w| w.contains("LP")));
+        assert_eq!(p.bands[5].kind, FilterKind::LowPass);
+        assert_eq!((p.bands[5].freq, p.bands[5].q), (18000.0, 0.707));
+        assert!(p.warnings.iter().any(|w| w.contains("BP")));
+        assert!(!p.warnings.iter().any(|w| w.contains("LP")));
+    }
+
+    #[test]
+    fn reads_cut_filters() {
+        let p = parse(
+            "Filter 1: ON HP Fc 30 Hz\n\
+             Filter 2: ON HPQ Fc 40 Hz Q 0.5\n\
+             Filter 3: ON LPQ Fc 16 kHz Q 1.2\n\
+             Filter 4: ON NO Fc 60 Hz\n\
+             Filter 5: OFF NO Fc 50 Hz Q 8\n",
+        );
+        assert!(p.warnings.is_empty(), "{:?}", p.warnings);
+        let k: Vec<_> = p.bands.iter().map(|b| (b.kind, b.freq, b.q)).collect();
+        assert_eq!(
+            k,
+            vec![
+                (FilterKind::HighPass, 30.0, 0.707),
+                (FilterKind::HighPass, 40.0, 0.5),
+                (FilterKind::LowPass, 16000.0, 1.2),
+                (FilterKind::Notch, 60.0, crate::dsp::Q_MAX),
+                (FilterKind::Notch, 50.0, 8.0),
+            ]
+        );
+        assert!(!p.bands[4].enabled);
     }
 
     #[test]
@@ -353,7 +396,14 @@ Filter 6: ON LP Fc 18000 Hz
         bands[2].gain_db = -7.5;
         bands[2].q = 2.25;
         bands[6].enabled = false;
-        let p = parse(&export(&bands, -3.5));
+        bands[0].kind = FilterKind::HighPass;
+        bands[0].q = 0.5;
+        bands[7].kind = FilterKind::Notch;
+        bands[7].q = 6.0;
+        bands[9].kind = FilterKind::LowPass;
+        let text = export(&bands, -3.5);
+        assert!(text.contains("HPQ Fc 31.0 Hz Q 0.500"), "{text}");
+        let p = parse(&text);
         assert_eq!(p.preamp_db, -3.5);
         let (back, preamp) = p.to_panel();
         assert_eq!(preamp, -3.5);
