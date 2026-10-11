@@ -29,7 +29,8 @@ $audioKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Audio'
 Write-Host ("DisableProtectedAudioDG: {0}" -f (Get-ItemProperty -LiteralPath $audioKey -ErrorAction SilentlyContinue).DisableProtectedAudioDG)
 
 Section 'Is the engine loaded by Windows audio?'
-tasklist /m $DllName
+# Only Windows' audio process: scanning every process can take minutes.
+tasklist /fi "imagename eq audiodg.exe" /m $DllName
 
 Section 'Playback devices'
 foreach ($d in Get-RenderDevices) {
