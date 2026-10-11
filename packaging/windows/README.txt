@@ -13,6 +13,9 @@ INSTALL
        powershell -ExecutionPolicy Bypass -File .\install-engine.ps1
   4. Pick your output from the list. Windows audio restarts (a second of
      silence).
+     Windows protects each device's effect settings, so setup takes
+     ownership of that one registry key (as other EQ software does). Its
+     original owner and permissions are saved and put back on removal.
 
 USE
   Open eq-box.exe, set System to "Windows (system-wide)", and press

@@ -81,6 +81,8 @@ if ($existing -and $existing -ne $ClsidText -and -not $Force) {
 
 # --- Files ----------------------------------------------------------------
 New-Item -ItemType Directory -Force -Path $InstallDir, $BackupDir | Out-Null
+# Left by an earlier test build.
+Remove-Item -LiteralPath (Join-Path $InstallDir 'setup') -Recurse -Force -ErrorAction SilentlyContinue
 # Only administrators may change the install folder (backups live here).
 icacls $InstallDir /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' '*S-1-5-19:(OI)(CI)RX' | Out-Null
 
@@ -126,39 +128,55 @@ if (-not (Test-Path $globalBackup)) {
     @{ DisableProtectedAudioDG = $prev } | ConvertTo-Json | Set-Content -Path $globalBackup -Encoding UTF8
 }
 
+# The original owner and permissions of the key EQ Box needs to write to:
+# FxProperties if the device has one, otherwise the device key (to create
+# FxProperties under it). Saved once, before anything changes.
+$savedDevice = Get-Content -LiteralPath $backup -Raw | ConvertFrom-Json
+$deviceSub = "$RenderSub\$($device.Guid)"
+$aclTarget = if ($savedDevice.FxExisted) { "$deviceSub\FxProperties" } else { $deviceSub }
+$aclBackup = Join-Path $BackupDir "$($device.Guid).acl.json"
+if (-not (Test-Path -LiteralPath $aclBackup)) {
+    @{ Key = $aclTarget; Sddl = (Get-KeySddl $aclTarget) } | ConvertTo-Json | Set-Content -Path $aclBackup -Encoding UTF8
+}
+
 # --- Registry -------------------------------------------------------------
 Write-Host 'Registering the engine...'
-$fxKey = "$($device.Key)\FxProperties"
-Invoke-AsSystem @"
-`$ErrorActionPreference = 'Stop'
+
 # COM class
-`$c = 'HKLM:\SOFTWARE\Classes\CLSID\$ClsidText'
-New-Item -Force -Path `$c | Out-Null
-Set-Item -Path `$c -Value 'EQ Box'
-New-Item -Force -Path "`$c\InprocServer32" | Out-Null
-Set-Item -Path "`$c\InprocServer32" -Value '$dllTarget'
-New-ItemProperty -Force -Path "`$c\InprocServer32" -Name ThreadingModel -Value 'Both' -PropertyType String | Out-Null
+$c = "HKLM:\SOFTWARE\Classes\CLSID\$ClsidText"
+New-Item -Force -Path $c | Out-Null
+Set-Item -Path $c -Value 'EQ Box'
+New-Item -Force -Path "$c\InprocServer32" | Out-Null
+Set-Item -Path "$c\InprocServer32" -Value $dllTarget
+New-ItemProperty -Force -Path "$c\InprocServer32" -Name ThreadingModel -Value 'Both' -PropertyType String | Out-Null
 
 # Audio engine registration
-`$a = 'HKLM:\SOFTWARE\Classes\AudioEngine\AudioProcessingObjects\$ClsidText'
-New-Item -Force -Path `$a | Out-Null
-`$s = @{ FriendlyName = 'EQ Box'; Copyright = "Timster's Audio Works"; APOInterface0 = '$IidApoText' }
-foreach (`$k in `$s.Keys) { New-ItemProperty -Force -Path `$a -Name `$k -Value `$s[`$k] -PropertyType String | Out-Null }
+$a = "HKLM:\SOFTWARE\Classes\AudioEngine\AudioProcessingObjects\$ClsidText"
+New-Item -Force -Path $a | Out-Null
+$strings = @{ FriendlyName = 'EQ Box'; Copyright = "Timster's Audio Works"; APOInterface0 = $IidApoText }
+foreach ($k in $strings.Keys) { New-ItemProperty -Force -Path $a -Name $k -Value $strings[$k] -PropertyType String | Out-Null }
 # MaxInstances -1 is stored as the DWORD 0xFFFFFFFF (no limit).
-`$d = @{ MajorVersion = 0; MinorVersion = 1; Flags = 15; MinInputConnections = 1; MaxInputConnections = 1;
-        MinOutputConnections = 1; MaxOutputConnections = 1; MaxInstances = -1; NumAPOInterfaces = 1 }
-foreach (`$k in `$d.Keys) { New-ItemProperty -Force -Path `$a -Name `$k -Value ([int]`$d[`$k]) -PropertyType DWord | Out-Null }
+$dwords = @{ MajorVersion = 0; MinorVersion = 1; Flags = 15; MinInputConnections = 1; MaxInputConnections = 1;
+             MinOutputConnections = 1; MaxOutputConnections = 1; MaxInstances = -1; NumAPOInterfaces = 1 }
+foreach ($k in $dwords.Keys) { New-ItemProperty -Force -Path $a -Name $k -Value ([int]$dwords[$k]) -PropertyType DWord | Out-Null }
 
 # The device: EQ Box as its endpoint effect, in the default processing mode
-if (-not (Test-Path -LiteralPath '$fxKey')) { New-Item -Force -Path '$fxKey' | Out-Null }
-New-ItemProperty -Force -LiteralPath '$fxKey' -Name '$PkeyEfx' -Value '$ClsidText' -PropertyType String | Out-Null
-New-ItemProperty -Force -LiteralPath '$fxKey' -Name '$PkeyEfxModes' -Value @('$ModeDefault') -PropertyType MultiString | Out-Null
+Write-Host 'Taking ownership of the device''s effect settings (saved for removal)...'
+Grant-KeyAccess $aclTarget
+$fxKey = "$($device.Key)\FxProperties"
+if (-not (Test-Path -LiteralPath $fxKey)) { New-Item -Path $fxKey | Out-Null }
+New-ItemProperty -Force -LiteralPath $fxKey -Name $PkeyEfx -Value $ClsidText -PropertyType String | Out-Null
+New-ItemProperty -Force -LiteralPath $fxKey -Name $PkeyEfxModes -Value @($ModeDefault) -PropertyType MultiString | Out-Null
 
 # Let the audio engine load effects that aren't Microsoft-signed
-`$audio = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Audio'
-if (-not (Test-Path `$audio)) { New-Item -Force -Path `$audio | Out-Null }
-New-ItemProperty -Force -Path `$audio -Name DisableProtectedAudioDG -Value 1 -PropertyType DWord | Out-Null
-"@
+# (Not needed on every Windows version, so a failure here only warns.)
+try {
+    $audio = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Audio'
+    if (-not (Test-Path -LiteralPath $audio)) { New-Item -Path $audio | Out-Null }
+    New-ItemProperty -Force -Path $audio -Name DisableProtectedAudioDG -Value 1 -PropertyType DWord | Out-Null
+} catch {
+    Write-Warning "Couldn't set DisableProtectedAudioDG ($($_.Exception.Message)). Carrying on; if you hear no EQ, tell the developer."
+}
 
 Write-Host 'Restarting Windows audio...'
 Restart-Service -Name audiosrv -Force

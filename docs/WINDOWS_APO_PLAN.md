@@ -58,6 +58,7 @@ Each step ends with something you can test on Windows. I can compile everything 
 ## Risks and safety
 
 - **The worst case is no sound from a device.** Every step ships with a way back: the remove script (step 2), and later Uninstall and Repair. Windows' own "Audio enhancements: Off" switch for a device also bypasses EQ Box immediately.
+- **Device keys belong to Windows.** On Windows 11 a device's effect settings are owned by TrustedInstaller, so setup takes ownership of just that one key, as other EQ software does. It saves the original owner and permissions first, and removal puts them back exactly.
 - **Windows security prompts.** The installer isn't signed with a paid certificate at first, so SmartScreen will warn on first run, as it does for the current zip files.
 - **Unknowns we'll find out by testing:**
   - Whether Windows' loopback capture includes the EQ (this decides how the analyser gets its feed).

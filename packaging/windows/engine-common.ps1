@@ -52,46 +52,104 @@ function Get-RenderDevices {
     }
 }
 
-# The device registry keys can only be changed by SYSTEM, so those steps
-# run as a one-off scheduled task under the SYSTEM account. The script goes
-# in the install folder, which only administrators can write to.
-function Invoke-AsSystem([string]$Script) {
-    $dir = Join-Path $InstallDir 'setup'
-    New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    $ps1  = Join-Path $dir 'system-step.ps1'
-    $done = Join-Path $dir 'system-step.done'
-    $fail = Join-Path $dir 'system-step.error'
-    Remove-Item -LiteralPath $done, $fail -ErrorAction SilentlyContinue
+# --- Taking ownership of one device key -----------------------------------
+#
+# Windows 11 lets only TrustedInstaller change a device's effect settings
+# (its FxProperties key), so not even SYSTEM can write there. Like other EQ
+# software, setup takes ownership of just that key, using two privileges
+# administrators hold but have switched off. The key's original owner and
+# permissions are saved first and put back exactly on removal.
 
-    $wrapped = @"
-try {
-$Script
-    Set-Content -LiteralPath '$done' -Value ok
-} catch {
-    Set-Content -LiteralPath '$fail' -Value (`$_ | Out-String)
-}
-"@
-    Set-Content -LiteralPath $ps1 -Value $wrapped -Encoding UTF8
+$RenderSub = 'SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render'
 
-    $task = 'EQ Box setup step'
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$ps1`""
-    $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -LogonType ServiceAccount -RunLevel Highest
-    Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Force | Out-Null
-    try {
-        Start-ScheduledTask -TaskName $task
-        $deadline = (Get-Date).AddSeconds(60)
-        while (-not (Test-Path -LiteralPath $done) -and -not (Test-Path -LiteralPath $fail)) {
-            if ((Get-Date) -gt $deadline) { throw 'The SYSTEM step did not finish within 60 seconds.' }
-            Start-Sleep -Milliseconds 250
+if (-not ('EqBoxPrivilege' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+public static class EqBoxPrivilege {
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    struct TokenPrivileges { public int Count; public long Luid; public int Attributes; }
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool LookupPrivilegeValue(string system, string name, out long luid);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool AdjustTokenPrivileges(IntPtr token, bool disableAll, ref TokenPrivileges state, int length, IntPtr previous, IntPtr returned);
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll")]
+    static extern bool CloseHandle(IntPtr handle);
+
+    public static void Enable(string name) {
+        IntPtr token;
+        // TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY
+        if (!OpenProcessToken(GetCurrentProcess(), 0x28, out token)) throw new Win32Exception();
+        try {
+            TokenPrivileges tp = new TokenPrivileges();
+            tp.Count = 1;
+            tp.Attributes = 2; // SE_PRIVILEGE_ENABLED
+            if (!LookupPrivilegeValue(null, name, out tp.Luid)) throw new Win32Exception();
+            if (!AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero)) throw new Win32Exception();
+            if (Marshal.GetLastWin32Error() == 1300) throw new Exception("This account doesn't hold " + name + ".");
+        } finally {
+            CloseHandle(token);
         }
-    } finally {
-        Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $ps1 -ErrorAction SilentlyContinue
     }
-    if (Test-Path -LiteralPath $fail) {
-        $msg = Get-Content -LiteralPath $fail -Raw
-        Remove-Item -LiteralPath $fail -ErrorAction SilentlyContinue
-        throw "The SYSTEM step failed: $msg"
-    }
-    Remove-Item -LiteralPath $done -ErrorAction SilentlyContinue
+}
+'@
+}
+
+function Enable-OwnershipPrivileges {
+    [EqBoxPrivilege]::Enable('SeTakeOwnershipPrivilege')
+    [EqBoxPrivilege]::Enable('SeRestorePrivilege')
+}
+
+$AdminsSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
+$AllSections = [System.Security.AccessControl.AccessControlSections]'Owner, Group, Access'
+
+function Open-HklmKey([string]$SubKey, [System.Security.AccessControl.RegistryRights]$Rights) {
+    $k = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
+        $SubKey, [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree, $Rights)
+    if (-not $k) { throw "Registry key not found: HKLM\$SubKey" }
+    $k
+}
+
+# The key's owner and permissions, as SDDL text.
+function Get-KeySddl([string]$SubKey) {
+    $k = Open-HklmKey $SubKey 'ReadPermissions'
+    try { $k.GetAccessControl($AllSections).GetSecurityDescriptorSddlForm($AllSections) } finally { $k.Close() }
+}
+
+# Make Administrators the owner of one key, with full control of it (and of
+# any key created under it).
+function Grant-KeyAccess([string]$SubKey) {
+    Enable-OwnershipPrivileges
+    $k = Open-HklmKey $SubKey 'TakeOwnership'
+    try {
+        $sec = New-Object System.Security.AccessControl.RegistrySecurity
+        $sec.SetOwner($AdminsSid)
+        $k.SetAccessControl($sec)   # writes only the owner
+    } finally { $k.Close() }
+    $k = Open-HklmKey $SubKey 'ReadPermissions, ChangePermissions'
+    try {
+        $sec = $k.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)
+        $rule = New-Object System.Security.AccessControl.RegistryAccessRule(
+            $AdminsSid, 'FullControl', 'ContainerInherit', 'None', 'Allow')
+        $sec.AddAccessRule($rule)
+        $k.SetAccessControl($sec)
+    } finally { $k.Close() }
+}
+
+# Put back a key's original owner and permissions.
+function Restore-KeySddl([string]$SubKey, [string]$Sddl) {
+    Enable-OwnershipPrivileges
+    $k = Open-HklmKey $SubKey 'TakeOwnership, ChangePermissions, ReadPermissions'
+    try {
+        $sec = New-Object System.Security.AccessControl.RegistrySecurity
+        $sec.SetSecurityDescriptorSddlForm($Sddl, $AllSections)
+        $k.SetAccessControl($sec)
+    } finally { $k.Close() }
 }
