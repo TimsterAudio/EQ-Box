@@ -492,6 +492,25 @@ mod win {
             println!("     1 kHz after going flat: {g:+.2} dB (expect 0)");
             check(g.abs() < 0.1, "picks up settings changes live")?;
 
+            // The cut filters: high-pass, low-pass and notch.
+            for (kind, freq, probe, expect) in [
+                (eq_core::dsp::FilterKind::HighPass, 1000.0, 125.0, -30.0),
+                (eq_core::dsp::FilterKind::LowPass, 1000.0, 8000.0, -30.0),
+                (eq_core::dsp::FilterKind::Notch, 1000.0, 1000.0, -40.0),
+            ] {
+                let mut s = EqSettings::default();
+                s.bands[5].kind = kind;
+                s.bands[5].freq = freq;
+                s.bands[5].q = 0.707;
+                engine_settings::write(&path, &s).map_err(|e| e.to_string())?;
+                std::thread::sleep(std::time::Duration::from_millis(400));
+                let g = measure(&rt, probe);
+                println!("     {kind:?} at 1 kHz, {probe} Hz: {g:+.1} dB (expect below {expect})");
+                check(g < expect, &format!("{kind:?} works in the engine"))?;
+            }
+            engine_settings::write(&path, &EqSettings::default()).map_err(|e| e.to_string())?;
+            std::thread::sleep(std::time::Duration::from_millis(400));
+
             // Silent buffers pass straight through.
             let mut buf = vec![0.5f32; 960];
             let mut conn = APO_CONNECTION_PROPERTY {

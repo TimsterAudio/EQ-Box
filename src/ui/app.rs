@@ -622,6 +622,7 @@ impl EqApp {
                     EngineState::Idle => "ENGINE IDLE".into(),
                     EngineState::Active if rate > 0 => format!("{rate} HZ"),
                     EngineState::Active => "ENGINE ON".into(),
+                    EngineState::Outdated => "UPDATE ENGINE".into(),
                 },
             ),
             (Some(r), _) => (
@@ -1028,10 +1029,10 @@ impl EqApp {
         }
         if is_win_engine {
             // Setup for the system-wide engine, where the Buffer knob would be.
-            let install = if self.engine == EngineState::NotInstalled {
-                "Install"
-            } else {
-                "Add"
+            let install = match self.engine {
+                EngineState::NotInstalled => "Install",
+                EngineState::Outdated => "Update",
+                _ => "Add",
             };
             let r = Rect::from_min_size(Pos2::new(x0, ky - 6.0), Vec2::new(52.0, 18.0));
             if key(ui, r, Id::new("engine-install"), K_CREAM, None, install, th).clicked() {
@@ -1080,6 +1081,11 @@ impl EqApp {
             (
                 "EQ Box's engine isn't installed yet. Press Install, allow Windows' permission prompt, and pick your output in the window that opens. Every app on that output then goes through EQ Box, with no virtual cable.".to_string(),
                 th.legend_dim,
+            )
+        } else if is_win_engine && self.engine == EngineState::Outdated {
+            (
+                "The engine installed in Windows is older than this EQ Box, so some settings (such as the HPF, LPF and notch filters) have no effect. Press Update, allow Windows' permission prompt, and pick the same output to install the new engine.".to_string(),
+                LED,
             )
         } else if is_win_engine {
             (

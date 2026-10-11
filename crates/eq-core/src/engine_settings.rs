@@ -12,6 +12,13 @@ use std::path::{Path, PathBuf};
 /// Bump only for changes old engines can't read; new fields just need a
 /// default.
 pub const FORMAT: u32 = 1;
+/// What the engine can do. It reports this in its status file, so EQ Box can
+/// tell when the installed engine is older than the window and needs
+/// installing again. Bump it whenever the window starts sending something
+/// older engines can't play (2: high-pass, low-pass and notch filters).
+pub const ENGINE_LEVEL: u32 = 2;
+/// The status file's line that carries [`ENGINE_LEVEL`].
+pub const LEVEL_LINE: &str = "engine level: ";
 pub const DIR_NAME: &str = "EQ Box";
 pub const FILE_NAME: &str = "engine.json";
 

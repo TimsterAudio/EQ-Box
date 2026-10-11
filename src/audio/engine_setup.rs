@@ -4,6 +4,7 @@
 //! folder next to `eq-box.exe`. The app only starts them (Windows asks for
 //! administrator permission) and watches for the engine.
 
+use eq_core::engine_settings::{ENGINE_LEVEL, LEVEL_LINE};
 use std::time::{Duration, SystemTime};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,6 +16,10 @@ pub enum EngineState {
     Idle,
     /// Running inside Windows audio.
     Active,
+    /// Running, but an older engine than this EQ Box: it can't play
+    /// everything the panel sends (such as the cut filters). Installing
+    /// again updates it.
+    Outdated,
 }
 
 /// The engine's report (`engine-status.txt`) is rewritten every second
@@ -34,15 +39,31 @@ pub fn engine_state() -> EngineState {
         return EngineState::NotInstalled;
     }
     let status = eq_core::engine_settings::default_path().with_file_name("engine-status.txt");
-    let fresh = std::fs::metadata(status)
+    let fresh = std::fs::metadata(&status)
         .and_then(|m| m.modified())
         .ok()
         .and_then(|t| SystemTime::now().duration_since(t).ok())
         .is_some_and(|age| age < ALIVE);
-    if fresh {
-        EngineState::Active
+    if !fresh {
+        return EngineState::Idle;
+    }
+    // Engines from before levels were reported have no level line.
+    let level = std::fs::read_to_string(&status)
+        .ok()
+        .and_then(|text| {
+            text.lines().find_map(|l| {
+                l.trim()
+                    .strip_prefix(LEVEL_LINE)?
+                    .trim()
+                    .parse::<u32>()
+                    .ok()
+            })
+        })
+        .unwrap_or(0);
+    if level < ENGINE_LEVEL {
+        EngineState::Outdated
     } else {
-        EngineState::Idle
+        EngineState::Active
     }
 }
 

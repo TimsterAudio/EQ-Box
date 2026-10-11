@@ -100,6 +100,7 @@ fn watch(path: std::path::PathBuf, shared: Arc<Shared>) {
             Ok(s) => {
                 shared.store(&s);
                 status::SETTINGS_READS.fetch_add(1, Relaxed);
+                status::set_read_error("");
                 if !last_error.is_empty() {
                     events::log(Level::Info, "settings readable again");
                 } else {
