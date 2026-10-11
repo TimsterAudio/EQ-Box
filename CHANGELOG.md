@@ -10,6 +10,7 @@
 - Windows engine: the event log only gets start-up, stream starts and problems.
 - New filter types: high-pass (HPF), low-pass (LPF) and notch, on a second row of type keys. They have a fixed shape (12 dB per octave for HPF and LPF), so a band's gain doesn't apply to them, and they fade in and out when switched. Presets with `HP`, `HPQ`, `LP`, `LPQ` and `NO` filters now load, and EQ Box saves them in that format.
 - Each band's On key lights up in the band's colour, instead of having an LED.
+- Analyser colours: the **Colour** tab on the Response frame picks red, amber, green, ice, white, rainbow (bass to treble) or heat (by level), and the **Style** tab picks fill and line, line only, or fill only.
 
 ## 0.1.0 – 2026-10-10
 

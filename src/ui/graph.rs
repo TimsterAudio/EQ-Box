@@ -1,6 +1,7 @@
 //! The response display: a red-display graph with each band's curve, the
 //! total response, the analyser, and draggable band points.
 
+use super::spectrum;
 use super::theme::*;
 use super::widgets::{glow_text, text, wheel};
 use crate::analyzer::Analyzer;
@@ -72,6 +73,7 @@ pub fn graph(
     selected: &mut usize,
     sample_rate: f32,
     analyzer: Option<&Analyzer>,
+    analyser_style: spectrum::Style,
 ) -> GraphResult {
     let mut result = GraphResult { changed: None };
     let p = ui.painter().with_clip_rect(rect.expand(2.0));
@@ -170,20 +172,24 @@ pub fn graph(
     if let Some(an) = analyzer.filter(|a| a.active) {
         let mut x = plot.left();
         let mut pts = Vec::new();
+        let mut levels = Vec::new();
         while x <= plot.right() {
             let f0 = ax.f(x - 1.0);
             let f1 = ax.f(x + 1.0);
-            pts.push(Pos2::new(
-                x,
-                ax.spec_y(an.level(f0, f1, sample_rate) + tilt(ax.f(x))),
-            ));
+            let db = an.level(f0, f1, sample_rate) + tilt(ax.f(x));
+            pts.push(Pos2::new(x, ax.spec_y(db)));
+            levels.push(((db - SPEC_BOTTOM) / (SPEC_TOP - SPEC_BOTTOM)).clamp(0.0, 1.0));
             x += 2.0;
         }
-        fill_to(&p, &pts, plot.bottom(), LCD_INK.gamma_multiply(0.10));
-        p.add(Shape::line(
-            pts,
-            Stroke::new(1.0, LCD_INK.gamma_multiply(0.35)),
-        ));
+        spectrum::draw(
+            &p,
+            &pts,
+            &levels,
+            plot.left(),
+            plot.right(),
+            plot.bottom(),
+            analyser_style,
+        );
         for &(d, l) in &[(-24.0, "-24"), (-48.0, "-48"), (-72.0, "-72")] {
             text(
                 &p,

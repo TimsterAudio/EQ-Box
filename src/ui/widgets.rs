@@ -415,6 +415,55 @@ pub fn key(
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// A tab on a section frame's top edge: an optional LED, a legend and an
+/// optional value in display red. Returns true when it's clicked.
+pub fn frame_tab(
+    ui: &mut Ui,
+    tab: Rect,
+    id: &str,
+    led_on: Option<bool>,
+    label: &str,
+    value: Option<&str>,
+    th: &Theme,
+) -> bool {
+    let resp = ui.interact(tab, Id::new(id), Sense::click());
+    let p = ui.painter();
+    p.rect_filled(tab, CornerRadius::same(3), th.panel);
+    p.rect_stroke(
+        tab,
+        CornerRadius::same(3),
+        Stroke::new(1.0, if resp.hovered() { FOCUS } else { th.frame }),
+        StrokeKind::Inside,
+    );
+    let mut x = tab.left() + 9.0;
+    if let Some(on) = led_on {
+        led(p, Pos2::new(tab.left() + 11.0, tab.center().y), on);
+        x = tab.left() + 22.0;
+    }
+    text(
+        p,
+        Pos2::new(x, tab.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        font(F_LEGEND_BOLD, 11.0),
+        th.legend,
+        1.8,
+    );
+    if let Some(v) = value {
+        glow_text(
+            p,
+            Pos2::new(tab.right() - 8.0, tab.center().y),
+            Align2::RIGHT_CENTER,
+            v,
+            font(F_MONO, 11.5),
+            LCD_INK,
+            0.3,
+        );
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+}
+
 /// A key with no LED that lights up itself, in `light`, when it's on. Off,
 /// it's a dark lens with a hint of its colour.
 pub fn lit_key(

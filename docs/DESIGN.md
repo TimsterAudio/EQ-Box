@@ -28,7 +28,7 @@ EQ Box uses Drone Box's panel language, so the two look like the same family of 
 | Run / Stop | **Red key** with LED, like Drone Box's Play / Stop |
 | Load / Save presets | **Cream keys**. Flat and Reset are **grey** (utility) keys |
 | Panel and Knobs switches | **Grey keys** with LEDs, as in Drone Box |
-| Analyser on/off | A **tab on the Response frame's top edge**, at the right (like Drone Box's Window tab) |
+| Analyser on/off, colour, style | **Tabs on the Response frame's top edge**, at the right (like Drone Box's Window tab). Colour and Style show their setting in display red and step through the choices on each click |
 | Response graph | Drawn as a large red display: dark red background, dim red grid, total response in display red with a glow |
 | Band colours | Ten colours used for the band's point and curve on the graph and the chip on its strip: red, orange, yellow, lime, green, teal, blue, violet, pink and cream |
 | Selected band | Its strip's frame turns orange (the focus colour), and its point gets a cream ring |

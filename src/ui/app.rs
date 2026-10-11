@@ -1,6 +1,7 @@
 //! The EQ Box panel.
 
 use super::graph::{self, fmt_freq};
+use super::spectrum::{self, Fill, Scheme};
 use super::theme::*;
 use super::widgets::*;
 use crate::analyzer::Analyzer;
@@ -34,6 +35,8 @@ struct Saved {
     panel: PanelKind,
     knobs: KnobStyle,
     analyser: bool,
+    analyser_scheme: Scheme,
+    analyser_fill: Fill,
     running: bool,
     selected: usize,
     last_dir: Option<PathBuf>,
@@ -53,6 +56,8 @@ impl Default for Saved {
             panel: PanelKind::Black,
             knobs: KnobStyle::Colour,
             analyser: true,
+            analyser_scheme: Scheme::default(),
+            analyser_fill: Fill::default(),
             running: false,
             selected: 5,
             last_dir: None,
@@ -803,6 +808,11 @@ impl EqApp {
             &mut self.s.selected,
             rate,
             self.s.analyser.then_some(&self.analyzer),
+            spectrum::Style {
+                scheme: self.s.analyser_scheme,
+                fill: self.s.analyser_fill,
+                strength: 0.4,
+            },
         );
         if let Some(i) = res.changed {
             let b = s.bands[i];
@@ -817,39 +827,32 @@ impl EqApp {
         }
         self.s.bands = s.bands;
 
-        // Analyser tab on the top edge, at the right.
-        let tab = Rect::from_min_size(
-            Pos2::new(rect.right() - 128.0, rect.top() - 9.0),
-            Vec2::new(112.0, 18.0),
-        );
-        let resp = ui.interact(tab, Id::new("analyser-tab"), egui::Sense::click());
-        let p = ui.painter();
-        p.rect_filled(tab, CornerRadius::same(3), th.panel);
-        p.rect_stroke(
-            tab,
-            CornerRadius::same(3),
-            Stroke::new(1.0, if resp.hovered() { FOCUS } else { th.frame }),
-            StrokeKind::Inside,
-        );
-        led(
-            p,
-            Pos2::new(tab.left() + 11.0, tab.center().y),
-            self.s.analyser,
-        );
-        text(
-            p,
-            Pos2::new(tab.left() + 22.0, tab.center().y),
-            Align2::LEFT_CENTER,
+        // Analyser tabs on the top edge, at the right: its colours, its
+        // style, and on / off.
+        let y = rect.top() - 9.0;
+        let r = Rect::from_min_size(Pos2::new(rect.right() - 128.0, y), Vec2::new(112.0, 18.0));
+        if frame_tab(
+            ui,
+            r,
+            "analyser-tab",
+            Some(self.s.analyser),
             "ANALYSER",
-            font(F_LEGEND_BOLD, 11.0),
-            th.legend,
-            1.8,
-        );
-        if resp
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .clicked()
-        {
+            None,
+            th,
+        ) {
             self.s.analyser = !self.s.analyser;
+        }
+        let r = Rect::from_min_size(Pos2::new(rect.right() - 276.0, y), Vec2::new(140.0, 18.0));
+        let fill = self.s.analyser_fill.name();
+        if frame_tab(ui, r, "analyser-fill", None, "STYLE", Some(fill), th) {
+            self.s.analyser_fill = self.s.analyser_fill.next();
+            self.touch("Analyser style", self.s.analyser_fill.name());
+        }
+        let r = Rect::from_min_size(Pos2::new(rect.right() - 410.0, y), Vec2::new(126.0, 18.0));
+        let scheme = self.s.analyser_scheme.name();
+        if frame_tab(ui, r, "analyser-colour", None, "COLOUR", Some(scheme), th) {
+            self.s.analyser_scheme = self.s.analyser_scheme.next();
+            self.touch("Analyser colour", self.s.analyser_scheme.name());
         }
     }
 
