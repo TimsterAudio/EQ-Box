@@ -269,8 +269,8 @@ impl EqApp {
 
     fn load_preset(&mut self) {
         let mut dlg = rfd::FileDialog::new()
-            .set_title("Load an Equalizer APO preset")
-            .add_filter("Equalizer APO preset", &["txt", "cfg"])
+            .set_title("Load an APO-format EQ preset")
+            .add_filter("APO-format EQ preset", &["txt", "cfg"])
             .add_filter("All files", &["*"]);
         if let Some(d) = &self.s.last_dir {
             dlg = dlg.set_directory(d);
@@ -285,7 +285,7 @@ impl EqApp {
             Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
             Err(e) => return self.notify(format!("Couldn't read {}: {e}", path.display())),
         };
-        let preset = crate::apo::parse(&text);
+        let preset = crate::preset::parse(&text);
         if preset.bands.is_empty() && preset.preamp_db == 0.0 {
             return self.notify("That file has no Preamp or Filter lines EQ Box can use");
         }
@@ -306,15 +306,18 @@ impl EqApp {
 
     fn save_preset(&mut self) {
         let mut dlg = rfd::FileDialog::new()
-            .set_title("Save as an Equalizer APO preset")
-            .add_filter("Equalizer APO preset", &["txt"])
+            .set_title("Save as an APO-format EQ preset")
+            .add_filter("APO-format EQ preset", &["txt"])
             .set_file_name(format!("{}.txt", self.s.preset_name));
         if let Some(d) = &self.s.last_dir {
             dlg = dlg.set_directory(d);
         }
         let Some(path) = dlg.save_file() else { return };
         self.s.last_dir = path.parent().map(|p| p.to_path_buf());
-        match std::fs::write(&path, crate::apo::export(&self.s.bands, self.s.preamp_db)) {
+        match std::fs::write(
+            &path,
+            crate::preset::export(&self.s.bands, self.s.preamp_db),
+        ) {
             Ok(()) => {
                 self.s.preset_name = path
                     .file_stem()
@@ -543,7 +546,14 @@ impl EqApp {
             .sample_rate
             .load(std::sync::atomic::Ordering::Relaxed);
         let line2 = match (&self.running, &self.audio_error) {
-            (Some(r), _) => (r.description.clone(), format!("{rate} HZ")),
+            (Some(r), _) => (
+                r.description.clone(),
+                if rate > 0 {
+                    format!("{rate} HZ")
+                } else {
+                    "RUNNING".into()
+                },
+            ),
             (None, Some(_)) => ("AUDIO ERROR".into(), "STOP".into()),
             (None, None) => ("AUDIO STOPPED".into(), "STOP".into()),
         };
@@ -816,6 +826,7 @@ impl EqApp {
 
         let fixed_input = self.backend().is_some_and(|b| b.fixed_input);
         let is_pw_sink = self.s.backend.as_deref() == Some(audio::PIPEWIRE_SINK);
+        let is_win_engine = self.s.backend.as_deref() == Some(audio::WINDOWS_ENGINE);
 
         // Input
         label(ui, 70.0, "Input");
@@ -826,7 +837,11 @@ impl EqApp {
                 ui.painter(),
                 r.left_center() + Vec2::new(8.0, 0.0),
                 Align2::LEFT_CENTER,
-                "EQ BOX SINK (APPS PLAY HERE)",
+                if is_win_engine {
+                    "WINDOWS AUDIO (ALL APPS)"
+                } else {
+                    "EQ BOX SINK (APPS PLAY HERE)"
+                },
                 font(F_MONO, 13.0),
                 LCD_INK,
                 0.3,
@@ -847,7 +862,16 @@ impl EqApp {
         }
 
         // Output
-        label(ui, 122.0, "Output");
+        // With the Windows engine, Output only picks what the meters hear.
+        label(
+            ui,
+            122.0,
+            if is_win_engine {
+                "Output (meters)"
+            } else {
+                "Output"
+            },
+        );
         let mut items = vec!["Default output".to_string()];
         items.extend(self.devices.outputs.iter().map(|d| d.label.clone()));
         let cur = self
@@ -927,6 +951,11 @@ impl EqApp {
         // Help or error text
         let help = if let Some(e) = self.audio_error.as_ref().or(self.device_error.as_ref()) {
             (e.clone(), LED)
+        } else if is_win_engine {
+            (
+                "EQ Box's engine runs inside Windows and equalises every app on the outputs it's installed on (see install-engine.ps1). Run sends your settings to it, and they stay set after EQ Box closes. Use Bypass to switch the EQ off.".to_string(),
+                th.legend_dim,
+            )
         } else if is_pw_sink {
             (
                 "EQ Box adds an output called \"EQ Box\". Choose it in your sound settings (or route apps to it with qpwgraph / Helvum) and EQ Box plays the result to the Output above.".to_string(),
@@ -939,7 +968,7 @@ impl EqApp {
             .is_some_and(|b| b.eq_ignore_ascii_case("asio"))
         {
             (
-                "Pick your interface for Input and Output. Send your playback into its inputs (a loopback or virtual channel), and EQ Box plays the result to its outputs.".to_string(),
+                "Pick your interface for Input and Output. Send your playback into its inputs (a virtual channel in its mixer), and EQ Box plays the result to its outputs.".to_string(),
                 th.legend_dim,
             )
         } else if self
@@ -949,7 +978,7 @@ impl EqApp {
             .is_some_and(|b| b.eq_ignore_ascii_case("wasapi"))
         {
             (
-                "Set Windows' default output to a virtual cable (such as VB-CABLE), choose \"Loopback: <cable>\" as Input and your speakers as Output.".to_string(),
+                "Set Windows' default output to a virtual cable (such as VB-CABLE), choose the cable's output (such as \"CABLE Output\") as Input and your speakers as Output.".to_string(),
                 th.legend_dim,
             )
         } else {

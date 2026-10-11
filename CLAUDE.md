@@ -7,18 +7,26 @@ EQ Box is a native ten-band parametric EQ by Timster's Audio Works, written in R
 - **Native, not HTML.** No web views or browser shells.
 - **No network requests at runtime.** Fonts and the icon are built into the binary.
 - **Keep the audio callbacks real-time safe.** They must not lock, allocate, do file I/O or log. The UI and the audio thread share state only through `Shared` (atomics) and the analyser ring buffer.
-- **DSP stays free of UI and audio-API code.** `dsp.rs` and `apo.rs` are plain Rust and unit tested. Every backend runs audio through `audio::Processor`.
+- **DSP stays free of UI and audio-API code.** Everything in `crates/eq-core` is plain Rust and unit tested. Every app backend runs audio through `audio::Processor`, and the Windows engine runs the same `Equalizer`.
+- **The Windows engine runs inside `audiodg.exe`: it must never panic, block or allocate in `APOProcess`.** A crash there silences the user's audio. Never change its CLSID.
 - **Never break saved settings.** `Saved` in `ui/app.rs` uses `#[serde(default)]`. Add new fields with defaults, and never rename or repurpose existing ones.
-- **Keep the APO preset format compatible** with Equalizer APO, both ways.
+- **Keep the APO preset format compatible** with other EQ software that uses it, both ways.
 - **Keep the panel ranges:** gain +12 / −24 dB, Q 0.1 to 20, 20 Hz to 20 kHz, preamp +12 / −24 dB.
 
 ## Checks before pushing
 
 ```sh
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo clippy --target x86_64-pc-windows-gnu   # Windows still compiles
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo clippy --workspace --target x86_64-pc-windows-gnu -- -D warnings   # Windows still compiles
+```
+
+The Windows engine can be checked here without Windows. Cross-build with MinGW and run the harness under Wine:
+
+```sh
+cargo build --release --target x86_64-pc-windows-gnu -p eq-box-apo --example apo_harness
+cd target/x86_64-pc-windows-gnu/release && cp examples/apo_harness.exe . && wine apo_harness.exe
 ```
 
 ## Workflow

@@ -9,10 +9,6 @@ use std::str::FromStr;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{mpsc, Arc};
 
-/// Input ids with this prefix capture what an output device is playing
-/// (WASAPI loopback).
-const LOOPBACK: &str = "loopback:";
-
 fn host_label(id: HostId) -> String {
     match id.name() {
         "PipeWire" => "PipeWire devices".into(),
@@ -31,12 +27,12 @@ pub fn hosts() -> Vec<BackendInfo> {
         .collect()
 }
 
-fn host(name: &str) -> Result<cpal::Host, String> {
+pub(super) fn host(name: &str) -> Result<cpal::Host, String> {
     let id = HostId::from_str(name).map_err(|_| format!("Unknown audio system \"{name}\""))?;
     cpal::host_from_id(id).map_err(|e| format!("{name} isn't available: {e}"))
 }
 
-fn device_name(d: &cpal::Device) -> String {
+pub(super) fn device_name(d: &cpal::Device) -> String {
     d.description()
         .map(|d| d.name().to_string())
         .unwrap_or_else(|_| "Unnamed device".into())
@@ -47,7 +43,6 @@ pub fn devices(backend: &str) -> Result<DeviceLists, String> {
     let mut lists = DeviceLists::default();
     let all = host.devices().map_err(|e| e.to_string())?;
     let is_wasapi = backend.eq_ignore_ascii_case("wasapi");
-    let mut loopbacks = Vec::new();
     for d in all {
         let Ok(id) = d.id() else { continue };
         let name = device_name(&d);
@@ -62,30 +57,29 @@ pub fn devices(backend: &str) -> Result<DeviceLists, String> {
         {
             continue;
         }
-        if d.supports_input() {
+        // No loopback: on WASAPI an output device opened as an input captures
+        // what it's playing, which feeds straight back. Only real inputs.
+        if d.supports_input() && !(is_wasapi && d.supports_output()) {
             lists.inputs.push(DeviceInfo {
                 id: id.to_string(),
                 label: name.clone(),
             });
         }
         if d.supports_output() {
-            if is_wasapi {
-                loopbacks.push(DeviceInfo {
-                    id: format!("{LOOPBACK}{id}"),
-                    label: format!("Loopback: {name}"),
-                });
-            }
             lists.outputs.push(DeviceInfo {
                 id: id.to_string(),
                 label: name,
             });
         }
     }
-    lists.inputs.extend(loopbacks);
     Ok(lists)
 }
 
-fn find_device(host: &cpal::Host, id: Option<&str>, output: bool) -> Result<cpal::Device, String> {
+pub(super) fn find_device(
+    host: &cpal::Host,
+    id: Option<&str>,
+    output: bool,
+) -> Result<cpal::Device, String> {
     match id {
         Some(id) => {
             let parsed = cpal::DeviceId::from_str(id).map_err(|e| e.to_string())?;
@@ -190,32 +184,20 @@ fn open(
 ) -> Result<(Vec<cpal::Stream>, String), String> {
     let host = host(&req.backend)?;
     let out_dev = find_device(&host, req.output.as_deref(), true)?;
-    let (in_id, loopback) = match req.input.as_deref() {
-        Some(id) => match id.strip_prefix(LOOPBACK) {
-            Some(rest) => (Some(rest), true),
-            None => (Some(id), false),
-        },
-        None => (None, false),
-    };
-    let in_dev = find_device(&host, in_id, loopback)?;
+    let in_dev = find_device(&host, req.input.as_deref(), false)?;
+    // Never capture an output (WASAPI would turn it into loopback, which
+    // feeds back), even if an old setting still names one.
+    if req.backend.eq_ignore_ascii_case("wasapi") && in_dev.supports_output() {
+        return Err("That input is an output device. EQ Box no longer captures outputs (loopback), because it can feed back. Choose a real input.".into());
+    }
 
     let out_supported = out_dev.default_output_config().map_err(|e| e.to_string())?;
     let rate = out_supported.sample_rate();
     let out_cfg: StreamConfig = out_supported.config();
 
-    let in_supported = if loopback {
-        in_dev.default_output_config()
-    } else {
-        in_dev.default_input_config()
-    }
-    .map_err(|e| e.to_string())?;
+    let in_supported = in_dev.default_input_config().map_err(|e| e.to_string())?;
     let in_supported = if in_supported.sample_rate() == rate {
         in_supported
-    } else if loopback {
-        return Err(format!(
-            "The loopback device runs at {} Hz but the output runs at {rate} Hz. Set both to the same rate in Sound settings.",
-            in_supported.sample_rate()
-        ));
     } else {
         in_dev
             .supported_input_configs()
@@ -258,11 +240,7 @@ fn open(
     let desc = format!(
         "{}  {} > {}",
         req.backend.to_uppercase(),
-        if loopback {
-            format!("LOOP {}", device_name(&in_dev))
-        } else {
-            device_name(&in_dev)
-        },
+        device_name(&in_dev),
         device_name(&out_dev)
     );
     Ok((vec![input, output], desc))

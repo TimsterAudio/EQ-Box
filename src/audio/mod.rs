@@ -4,6 +4,8 @@
 mod cpal_backend;
 #[cfg(target_os = "linux")]
 mod pipewire_sink;
+#[cfg(windows)]
+mod windows_engine;
 
 use crate::dsp::Equalizer;
 use crate::shared::{AnalyzerTap, Shared};
@@ -11,6 +13,8 @@ use std::sync::Arc;
 
 /// Backend id for EQ Box's own PipeWire node.
 pub const PIPEWIRE_SINK: &str = "pipewire-sink";
+/// Backend id for the system-wide engine inside the Windows audio engine.
+pub const WINDOWS_ENGINE: &str = "windows-engine";
 
 /// EQ, meters and analyser feed for one running stream.
 pub struct Processor {
@@ -85,6 +89,12 @@ pub fn backends() -> Vec<BackendInfo> {
         label: "PipeWire sink".into(),
         fixed_input: true,
     });
+    #[cfg(windows)]
+    v.push(BackendInfo {
+        id: WINDOWS_ENGINE.into(),
+        label: "Windows (system-wide)".into(),
+        fixed_input: true,
+    });
     v.extend(cpal_backend::hosts());
     v
 }
@@ -95,6 +105,15 @@ pub fn devices(backend: &str) -> Result<DeviceLists, String> {
         return Ok(DeviceLists {
             inputs: Vec::new(),
             outputs: pipewire_sink::outputs(),
+        });
+    }
+    #[cfg(windows)]
+    if backend == WINDOWS_ENGINE {
+        // The engine runs inside Windows; "Output" picks which device the
+        // meters and analyser listen to.
+        return Ok(DeviceLists {
+            inputs: Vec::new(),
+            outputs: cpal_backend::devices("WASAPI")?.outputs,
         });
     }
     cpal_backend::devices(backend)
@@ -128,6 +147,10 @@ pub fn start(req: &StartRequest, shared: Arc<Shared>, tap: AnalyzerTap) -> Resul
     #[cfg(target_os = "linux")]
     if req.backend == PIPEWIRE_SINK {
         return pipewire_sink::start(req.output.clone(), shared, tap);
+    }
+    #[cfg(windows)]
+    if req.backend == WINDOWS_ENGINE {
+        return windows_engine::start(req.output.clone(), shared, tap);
     }
     cpal_backend::start(req, shared, tap)
 }

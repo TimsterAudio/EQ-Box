@@ -791,10 +791,28 @@ dependencies = [
  "cpal",
  "eframe",
  "egui",
+ "eq-core",
  "pipewire",
  "rfd",
  "rtrb",
  "rustfft",
+ "serde",
+]
+
+[[package]]
+name = "eq-box-apo"
+version = "0.1.0"
+dependencies = [
+ "eq-core",
+ "windows",
+ "windows-core",
+]
+
+[[package]]
+name = "eq-core"
+version = "0.1.0"
+dependencies = [
+ "rtrb",
  "serde",
  "serde_json",
 ]

@@ -1,0 +1,40 @@
+[package]
+name = "eq-box-apo"
+version.workspace = true
+edition.workspace = true
+description = "EQ Box's system-wide engine for Windows: an Audio Processing Object (APO) DLL"
+publish = false
+
+[lib]
+name = "eq_box_apo"
+crate-type = ["cdylib"]
+
+[dependencies]
+eq-core = { path = "../eq-core" }
+
+[target.'cfg(windows)'.dependencies]
+windows-core = "0.62"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Apo",
+    "Win32_Media_Multimedia",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_EventLog",
+] }
+
+# The test harness (examples/apo_harness.rs) loads the DLL the way the
+# Windows audio engine does. Run it on Windows, or under Wine.
+[target.'cfg(windows)'.dev-dependencies]
+eq-core = { path = "../eq-core" }
+windows-core = "0.62"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Apo",
+    "Win32_Media_Multimedia",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+] }

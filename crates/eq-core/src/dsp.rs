@@ -130,7 +130,7 @@ impl Coeffs {
     };
 
     /// RBJ "Audio EQ Cookbook" designs. Shelves use the Q form, which is what
-    /// Equalizer APO's `LSC`/`HSC` filters use, so imported presets match.
+    /// APO-format presets' `LSC`/`HSC` filters use, so imported presets match.
     pub fn design(kind: FilterKind, freq: f64, gain_db: f64, q: f64, sample_rate: f64) -> Coeffs {
         if gain_db.abs() < 1e-6 || sample_rate <= 0.0 {
             return Coeffs::IDENTITY;
@@ -347,6 +347,14 @@ impl Equalizer {
 
     pub fn channels(&self) -> usize {
         self.channels
+    }
+
+    /// Clear the filters' memory (after a gap or a seek), without
+    /// allocating.
+    pub fn reset(&mut self) {
+        for st in &mut self.state {
+            *st = [BiquadState::default(); NUM_BANDS];
+        }
     }
 
     /// Process interleaved audio in place.

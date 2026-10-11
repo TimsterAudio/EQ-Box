@@ -23,8 +23,8 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
       - run: cargo build --release
       - uses: actions/upload-artifact@v4
         with:
@@ -48,9 +48,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: asio-${{ matrix.asio }}
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets -- -D warnings
         if: ${{ !matrix.asio }}
-      - run: cargo test
+      - run: cargo test --workspace
         if: ${{ !matrix.asio }}
       # The asio-sys build script downloads Steinberg's ASIO SDK and uses the
       # runner's preinstalled LLVM for bindgen.
@@ -59,11 +59,23 @@ jobs:
         run: |
           if [ "${{ matrix.asio }}" = "true" ]; then
             export LIBCLANG_PATH="C:/Program Files/LLVM/bin"
-            cargo build --release --features asio
+            cargo build --release --workspace --features eq-box/asio
           else
-            cargo build --release
+            cargo build --release --workspace
           fi
+      # Load the system-wide engine DLL through COM on real Windows, run a
+      # tone through it and check the EQ (see examples/apo_harness.rs).
+      - name: Test the system-wide engine
+        if: ${{ !matrix.asio }}
+        shell: bash
+        run: |
+          cargo build --release -p eq-box-apo --example apo_harness
+          cp target/release/examples/apo_harness.exe target/release/
+          cd target/release && ./apo_harness.exe
       - uses: actions/upload-artifact@v4
         with:
           name: eq-box-windows-x86_64${{ matrix.asio && '-asio' || '' }}
-          path: target/release/eq-box.exe
+          path: |
+            target/release/eq-box.exe
+            target/release/eq_box_apo.dll
+            packaging/windows/*.ps1

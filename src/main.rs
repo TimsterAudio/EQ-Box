@@ -4,12 +4,11 @@
 #![allow(clippy::needless_range_loop)]
 
 mod analyzer;
-mod apo;
 mod audio;
-mod dsp;
 mod icon;
-mod shared;
 mod ui;
+
+use eq_core::{dsp, preset, shared};
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
