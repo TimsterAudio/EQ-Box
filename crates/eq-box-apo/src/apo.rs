@@ -8,9 +8,11 @@
 //! Windows audio engine.
 
 use crate::settings_watch;
+use crate::status;
 use crate::CLSID_EQ_BOX_APO;
 use eq_core::dsp::Equalizer;
 use eq_core::shared::Shared;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, Mutex};
 use windows::Win32::Foundation::{
     CLASS_E_NOAGGREGATION, E_INVALIDARG, E_OUTOFMEMORY, E_POINTER, HANDLE,
@@ -77,6 +79,7 @@ pub struct EqBoxApo {
 
 impl EqBoxApo {
     fn new() -> Self {
+        status::CREATED.fetch_add(1, Relaxed);
         EqBoxApo {
             state: Mutex::new(State {
                 initialized: false,
@@ -104,6 +107,11 @@ fn float_format(t: &IAudioMediaType) -> Result<Format> {
         && f.dwBytesPerSampleContainer == 4
         && f.dwValidBitsPerSample == 32;
     if !is_float || f.dwSamplesPerFrame == 0 || f.fFramesPerSecond <= 0.0 {
+        status::refused(
+            f.dwValidBitsPerSample,
+            f.dwBytesPerSampleContainer,
+            f.guidFormatType == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT,
+        );
         return Err(APOERR_FORMAT_NOT_SUPPORTED.into());
     }
     Ok(Format {
@@ -181,6 +189,7 @@ impl IAudioProcessingObject_Impl for EqBoxApo_Impl {
             return Err(APOERR_ALREADY_INITIALIZED.into());
         }
         st.initialized = true;
+        status::INITIALIZED.fetch_add(1, Relaxed);
         Ok(())
     }
 
@@ -247,6 +256,9 @@ impl IAudioProcessingObjectConfiguration_Impl for EqBoxApo_Impl {
         st.eq = Some(Equalizer::new(in_fmt.rate as f64, in_fmt.channels as usize));
         st.format = Some(in_fmt);
         st.locked = true;
+        status::LOCKED.fetch_add(1, Relaxed);
+        status::RATE.store(in_fmt.rate as u32, Relaxed);
+        status::CHANNELS.store(in_fmt.channels, Relaxed);
         Ok(())
     }
 
@@ -256,6 +268,7 @@ impl IAudioProcessingObjectConfiguration_Impl for EqBoxApo_Impl {
             return Err(APOERR_ALREADY_UNLOCKED.into());
         }
         st.locked = false;
+        status::LOCKED.fetch_sub(1, Relaxed);
         Ok(())
     }
 }
@@ -287,8 +300,10 @@ impl IAudioProcessingObjectRT_Impl for EqBoxApo_Impl {
         output.u32ValidFrameCount = input.u32ValidFrameCount;
         output.u32BufferFlags = input.u32BufferFlags;
         if input.u32BufferFlags != BUFFER_VALID || input.pBuffer == 0 || output.pBuffer == 0 {
+            status::SILENT_BUFFERS.fetch_add(1, Relaxed);
             return;
         }
+        status::BUFFERS.fetch_add(1, Relaxed);
 
         // Only ever contended if Windows breaks its own call rules; then
         // the audio passes through untouched rather than waiting.

@@ -968,7 +968,7 @@ impl EqApp {
             .is_some_and(|b| b.eq_ignore_ascii_case("asio"))
         {
             (
-                "Pick your interface for Input and Output. Send your playback into its inputs (a loopback or virtual channel), and EQ Box plays the result to its outputs.".to_string(),
+                "Pick your interface for Input and Output. Send your playback into its inputs (a virtual channel in its mixer), and EQ Box plays the result to its outputs.".to_string(),
                 th.legend_dim,
             )
         } else if self
@@ -978,7 +978,7 @@ impl EqApp {
             .is_some_and(|b| b.eq_ignore_ascii_case("wasapi"))
         {
             (
-                "Set Windows' default output to a virtual cable (such as VB-CABLE), choose \"Loopback: <cable>\" as Input and your speakers as Output.".to_string(),
+                "Set Windows' default output to a virtual cable (such as VB-CABLE), choose the cable's output (such as \"CABLE Output\") as Input and your speakers as Output.".to_string(),
                 th.legend_dim,
             )
         } else {

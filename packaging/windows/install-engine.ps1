@@ -124,9 +124,9 @@ try {
 }
 
 # The settings file: EQ Box (any user) writes it, the audio engine
-# (LOCAL SERVICE) reads it.
+# (LOCAL SERVICE) reads it and writes engine-status.txt next to it.
 New-Item -ItemType Directory -Force -Path $SettingsDir | Out-Null
-icacls $SettingsDir /grant '*S-1-5-32-545:(OI)(CI)M' '*S-1-5-19:(OI)(CI)RX' | Out-Null
+icacls $SettingsDir /grant '*S-1-5-32-545:(OI)(CI)M' '*S-1-5-19:(OI)(CI)M' | Out-Null
 
 # --- Backups (only the first time, so a reinstall never overwrites them) --
 $backup = Join-Path $BackupDir "$($device.Guid).json"

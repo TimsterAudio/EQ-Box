@@ -15,6 +15,7 @@
 
 mod apo;
 mod settings_watch;
+mod status;
 
 use windows::Win32::Foundation::{CLASS_E_CLASSNOTAVAILABLE, E_POINTER, S_FALSE};
 use windows::Win32::System::Com::IClassFactory;

@@ -210,10 +210,23 @@ mod win {
                 "leaves silent buffers alone",
             )?;
 
+            // The engine reports what it's doing once a second.
+            std::thread::sleep(std::time::Duration::from_millis(1300));
+            let status = path.with_file_name("engine-status.txt");
+            let text = std::fs::read_to_string(&status).unwrap_or_default();
+            for line in text.lines() {
+                println!("     | {line}");
+            }
+            check(
+                text.contains("streams running: 1") && text.contains("48000 Hz, 2 ch"),
+                "writes its status report",
+            )?;
+
             cfg.UnlockForProcess()
                 .map_err(|e| format!("UnlockForProcess: {e}"))?;
             check(cfg.UnlockForProcess().is_err(), "second Unlock is refused")?;
             let _ = std::fs::remove_file(&path);
+            let _ = std::fs::remove_file(status);
         }
         Ok(())
     }

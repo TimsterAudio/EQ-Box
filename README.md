@@ -20,7 +20,7 @@ Get the latest version from the [Releases page](https://github.com/TimsterAudio/
 - **Loads APO-format EQ presets**, such as AutoEQ's `ParametricEQ.txt` files. It reads `Preamp:` and `Filter:` lines with the `PK`, `LS`/`LSC` and `HS`/`HSC` types, `Fc`, `Gain`, `Q` or `BW Oct`, and `ON`/`OFF`. It **saves** presets in the same format.
 - **Response graph:** each band's curve in its own colour, the overall response in red over them, and a live **spectrum analyser** of the output behind both. Drag a band's point to set its frequency and gain, and scroll over it to change Q.
 - **Audio systems:**
-  - **Windows:** a **system-wide engine** (test build) that runs inside Windows' own audio engine and equalises every app with no virtual cable, plus **WASAPI** (it can capture any output by loopback) and **ASIO** (an optional build feature).
+  - **Windows:** a **system-wide engine** (test build) that runs inside Windows' own audio engine and equalises every app with no virtual cable, plus **WASAPI** and **ASIO** (an optional build feature).
   - **Linux:** a **native PipeWire sink**. EQ Box shows up as an output called "EQ Box", so any app can play into it. It also has PipeWire and ALSA device modes.
 - **Remembers everything:** bands, preset name, devices, panel and knob style, and whether audio was running.
 
@@ -51,7 +51,7 @@ Apps using exclusive mode or ASIO bypass it, as they do with other EQ software. 
 Without the system-wide engine, route your audio through a virtual cable:
 
 1. Install a virtual cable, such as [VB-CABLE](https://vb-audio.com/Cable/), and set **CABLE Input** as Windows' default output.
-2. In EQ Box, set **System** to **WASAPI**, **Input** to **CABLE Output** (or **Loopback: CABLE Input**), and **Output** to your real speakers or headphones.
+2. In EQ Box, set **System** to **WASAPI**, **Input** to **CABLE Output**, and **Output** to your real speakers or headphones.
 3. Press **Run / Stop**.
 
 The two devices must run at the same sample rate, which you set under *Sound settings › device › Advanced*. **Buffer** sets the cushion between the input and the output. If you hear crackles, raise it. If you need less delay, lower it.
