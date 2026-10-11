@@ -93,7 +93,7 @@ fn freq_spec(default: f32) -> Spec {
 }
 
 fn q_spec(kind: FilterKind) -> Spec {
-    let default = if kind == FilterKind::Peak { 1.0 } else { 0.707 };
+    let default = kind.default_q();
     Spec {
         min: Q_MIN,
         max: Q_MAX,
@@ -1107,14 +1107,17 @@ impl EqApp {
         let mut touched: Option<(&str, String)> = None;
         let mut interacted = false;
 
-        // Filter type: LED key row
+        // Filter type: two rows of LED keys, the gain types over the cuts
         let kinds = FilterKind::ALL;
         let kw = 38.0;
         let x0 = rect.center().x - (kw * 3.0 + 12.0) / 2.0;
         for (k, kind) in kinds.iter().enumerate() {
             let r = Rect::from_min_size(
-                Pos2::new(x0 + k as f32 * (kw + 6.0), rect.top() + 36.0),
-                Vec2::new(kw, 14.0),
+                Pos2::new(
+                    x0 + (k % 3) as f32 * (kw + 6.0),
+                    rect.top() + 28.0 + (k / 3) as f32 * 44.0,
+                ),
+                Vec2::new(kw, 12.0),
             );
             if key(
                 ui,
@@ -1135,8 +1138,8 @@ impl EqApp {
 
         // Gain fader
         let fr = Rect::from_min_size(
-            Pos2::new(rect.left() + 14.0, rect.top() + 80.0),
-            Vec2::new(36.0, 186.0),
+            Pos2::new(rect.left() + 14.0, rect.top() + 110.0),
+            Vec2::new(36.0, 156.0),
         );
         let resp = fader(
             ui,
@@ -1162,7 +1165,11 @@ impl EqApp {
         readout(
             ui.painter(),
             Pos2::new(cx_f, rect.top() + 288.0),
-            &format!("{:+.1}", b.gain_db),
+            &if b.kind.has_gain() {
+                format!("{:+.1}", b.gain_db)
+            } else {
+                "--".to_string()
+            },
             50.0,
         );
 
@@ -1170,7 +1177,7 @@ impl EqApp {
         let cx = rect.right() - 46.0;
         let resp = knob(
             ui,
-            Pos2::new(cx, rect.top() + 104.0),
+            Pos2::new(cx, rect.top() + 129.0),
             19.0,
             Id::new(("freq", i)),
             &mut b.freq,
@@ -1184,21 +1191,21 @@ impl EqApp {
         }
         legend(
             ui.painter(),
-            Pos2::new(cx, rect.top() + 130.0),
+            Pos2::new(cx, rect.top() + 153.0),
             Align2::CENTER_TOP,
             "Freq",
             th,
         );
         readout(
             ui.painter(),
-            Pos2::new(cx, rect.top() + 146.0),
+            Pos2::new(cx, rect.top() + 169.0),
             &fmt_hz(b.freq),
             72.0,
         );
 
         let resp = knob(
             ui,
-            Pos2::new(cx, rect.top() + 196.0),
+            Pos2::new(cx, rect.top() + 215.0),
             19.0,
             Id::new(("q", i)),
             &mut b.q,
@@ -1212,14 +1219,14 @@ impl EqApp {
         }
         legend(
             ui.painter(),
-            Pos2::new(cx, rect.top() + 222.0),
+            Pos2::new(cx, rect.top() + 239.0),
             Align2::CENTER_TOP,
             "Q",
             th,
         );
         readout(
             ui.painter(),
-            Pos2::new(cx, rect.top() + 238.0),
+            Pos2::new(cx, rect.top() + 254.0),
             &format!("{:.2}", b.q),
             56.0,
         );
@@ -1229,12 +1236,12 @@ impl EqApp {
             Pos2::new(cx - 20.0, rect.top() + 280.0),
             Vec2::new(40.0, 16.0),
         );
-        if key(
+        if lit_key(
             ui,
             r,
             Id::new(("on", i)),
-            K_CREAM,
-            Some(b.enabled),
+            BAND_COLOURS[i],
+            b.enabled,
             "On",
             th,
         )

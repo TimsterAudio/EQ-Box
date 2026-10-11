@@ -22,8 +22,8 @@ EQ Box uses Drone Box's panel language, so the two look like the same family of 
 |---|---|
 | Band gain | **Fader**, like a level, 0 dB at the bold tick |
 | Band frequency, Q | **Knob**, green (tone family) |
-| Filter type (3 choices) | **LED key row**, orange: LO SH / BELL / HI SH |
-| Band on/off | **Single LED key**, cream |
+| Filter type (6 choices) | **Two LED key rows**, orange: LO SH / BELL / HI SH over HPF / NOTCH / LPF |
+| Band on/off | **Lit key** with no LED: it glows in the band's colour when on, and is a dark lens when off |
 | Bypass | **Yellow key** with LED |
 | Run / Stop | **Red key** with LED, like Drone Box's Play / Stop |
 | Load / Save presets | **Cream keys**. Flat and Reset are **grey** (utility) keys |
@@ -39,5 +39,5 @@ EQ Box uses Drone Box's panel language, so the two look like the same family of 
 - **Top strip, 0–110:** wordmark, logo and model line; the LED display; the APO preset keys; In and Out meters; Preamp; the Panel and Knobs switches; Bypass; Run / Stop.
 - **Stripe** at 110.
 - **Row 2, 136–500:** **Response** (the graph) and **Audio** (system, input, output, buffer, rescan, dropouts, help).
-- **Row 3, 518–848:** ten **Band** strips, each with the type keys, the gain fader on the left, the Freq and Q knobs on the right, and the On key.
+- **Row 3, 518–848:** ten **Band** strips, each with the two rows of type keys, the gain fader on the left (its readout shows `--` for the types without gain), the Freq and Q knobs on the right, and the On key.
 - **Footer:** usage hints, and notices such as preset warnings.

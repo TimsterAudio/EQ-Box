@@ -415,6 +415,47 @@ pub fn key(
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// A key with no LED that lights up itself, in `light`, when it's on. Off,
+/// it's a dark lens with a hint of its colour.
+pub fn lit_key(
+    ui: &mut Ui,
+    rect: Rect,
+    id: Id,
+    light: Color32,
+    on: bool,
+    label: &str,
+    th: &Theme,
+) -> Response {
+    let colour = if on {
+        KeyColour {
+            face: lerp_colour(light, Color32::WHITE, 0.22),
+            hi: lerp_colour(light, Color32::WHITE, 0.6),
+            lo: lerp_colour(light, Color32::BLACK, 0.08),
+            shadow: lerp_colour(light, Color32::BLACK, 0.6),
+        }
+    } else {
+        let base = lerp_colour(Color32::from_rgb(0x26, 0x25, 0x22), light, 0.14);
+        KeyColour {
+            face: base,
+            hi: lerp_colour(base, Color32::WHITE, 0.1),
+            lo: lerp_colour(base, Color32::BLACK, 0.3),
+            shadow: Color32::from_rgb(0x0e, 0x0e, 0x0d),
+        }
+    };
+    if on {
+        // The light spilling round the key.
+        let p = ui.painter();
+        for (grow, alpha) in [(10.0, 0.04), (6.0, 0.08), (3.0, 0.16)] {
+            p.rect_filled(
+                rect.expand(grow),
+                CornerRadius::same((grow + 2.0) as u8),
+                light.gamma_multiply(alpha),
+            );
+        }
+    }
+    key(ui, rect, id, colour, None, label, th)
+}
+
 /// Shared drag / scroll / keyboard handling for knobs and faders.
 fn adjust(ui: &mut Ui, resp: &mut Response, id: Id, v: &mut f32, spec: &Spec, travel_px: f32) {
     let shift = ui.input(|i| i.modifiers.shift);

@@ -8,6 +8,8 @@
 - Windows engine: install it from EQ Box (Install / Add / Remove under System) or by double-clicking the `.cmd` files, with no PowerShell typing. The display shows whether the engine is installed and running.
 - Windows engine: an output's own driver effect (speaker tuning, "enhancements") is kept and runs after EQ Box's EQ, instead of having to be switched off.
 - Windows engine: the event log only gets start-up, stream starts and problems.
+- New filter types: high-pass (HPF), low-pass (LPF) and notch, on a second row of type keys. They have a fixed shape (12 dB per octave for HPF and LPF), so a band's gain doesn't apply to them, and they fade in and out when switched. Presets with `HP`, `HPQ`, `LP`, `LPQ` and `NO` filters now load, and EQ Box saves them in that format.
+- Each band's On key lights up in the band's colour, instead of having an LED.
 
 ## 0.1.0 – 2026-10-10
 
