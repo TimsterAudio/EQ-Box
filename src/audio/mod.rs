@@ -1,6 +1,7 @@
 //! Audio backends. Every backend feeds interleaved f32 buffers through one
 //! [`Processor`]; the UI only ever talks to [`Shared`].
 
+pub mod capture;
 mod cpal_backend;
 pub mod engine_setup;
 #[cfg(target_os = "linux")]

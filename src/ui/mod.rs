@@ -1,3 +1,4 @@
+pub mod analyser_app;
 pub mod app;
 pub mod graph;
 pub mod spectrum;

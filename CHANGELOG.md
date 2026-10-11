@@ -11,6 +11,7 @@
 - New filter types: high-pass (HPF), low-pass (LPF) and notch, on a second row of type keys. They have a fixed shape (12 dB per octave for HPF and LPF), so a band's gain doesn't apply to them, and they fade in and out when switched. Presets with `HP`, `HPQ`, `LP`, `LPQ` and `NO` filters now load, and EQ Box saves them in that format.
 - Each band's On key lights up in the band's colour, instead of having an LED.
 - Analyser colours: the **Colour** tab on the Response frame picks red, amber, green, ice, white, rainbow (bass to treble) or heat (by level), and the **Style** tab picks fill and line, line only, or fill only.
+- **EQ Box Analyser**, a separate program: the spectrum analyser on its own, listening to what an output plays or to an input. Curve, bars or LED views at 1/3, 1/6 or 1/12 octave; the same colour schemes; adjustable rise, fall and peak hold; range and slope; and for any screen, a resizable window with hideable controls, full screen and always-on-top.
 
 ## 0.1.0 – 2026-10-10
 

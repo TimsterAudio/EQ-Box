@@ -494,7 +494,7 @@ impl eframe::App for EqApp {
     }
 }
 
-fn set_visuals(ctx: &egui::Context, th: &Theme) {
+pub(crate) fn set_visuals(ctx: &egui::Context, th: &Theme) {
     let mut v = egui::Visuals::dark();
     v.window_fill = Color32::from_rgb(0x1f, 0x1f, 0x1f);
     v.panel_fill = th.panel;
@@ -509,7 +509,7 @@ fn set_visuals(ctx: &egui::Context, th: &Theme) {
     }
 }
 
-fn draw_panel_bg(p: &egui::Painter, rect: Rect, th: &Theme) {
+pub(crate) fn draw_panel_bg(p: &egui::Painter, rect: Rect, th: &Theme) {
     p.rect_filled(rect, 0, th.panel);
     if th.silver {
         // Faint brushed texture.

@@ -1,14 +1,7 @@
 // Hide the console window on Windows release builds.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
-// Index loops read best in the per-sample DSP code.
-#![allow(clippy::needless_range_loop)]
 
-mod analyzer;
-mod audio;
-mod icon;
-mod ui;
-
-use eq_core::{dsp, preset, shared};
+use eq_box::{icon, ui};
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {

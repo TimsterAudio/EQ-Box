@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=EQ Box Analyser
+GenericName=Spectrum Analyser
+Comment=Real-time spectrum of what's playing, or of an input
+Exec=eq-box-analyser
+Icon=eq-box
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=analyser;analyzer;spectrum;rta;fft;pipewire;
+StartupWMClass=eq-box-analyser
