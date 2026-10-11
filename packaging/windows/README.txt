@@ -6,13 +6,13 @@ EQ Box equalises everything an output plays. No virtual cable is needed.
 It's an early test build: try it on one device first.
 
 INSTALL
-  1. Right-click Start > "Terminal (Admin)" or "Windows PowerShell (Admin)".
-  2. Go to this folder, for example:
-       cd "$env:USERPROFILE\Downloads\eq-box-0.1.0-windows-x86_64\system-wide-engine"
-  3. Run:
-       powershell -ExecutionPolicy Bypass -File .\install-engine.ps1
-  4. Pick your output from the list. Windows audio restarts (a second of
-     silence).
+  1. Either press Install in EQ Box (System: "Windows (system-wide)"), or
+     double-click "Install system-wide engine.cmd" in this folder.
+  2. Allow Windows' permission prompt.
+  3. Pick your output from the list. Windows audio restarts (a second of
+     silence). Run it again (Add in EQ Box) to put EQ Box on another output.
+     If the output has its own effect from its driver (speaker tuning,
+     "enhancements"), EQ Box keeps it and runs it after the EQ.
      Windows protects each device's effect settings, so setup takes
      ownership of that one registry key (as other EQ software does). Its
      original owner and permissions are saved and put back on removal.
@@ -23,9 +23,17 @@ USE
   The EQ stays set after EQ Box closes. Use Bypass to switch it off.
 
 REMOVE
-  From an Administrator PowerShell in this folder:
-       powershell -ExecutionPolicy Bypass -File .\remove-engine.ps1
+  Press Remove in EQ Box, or double-click "Remove system-wide engine.cmd".
   Every device goes back exactly as it was.
+
+IF SOMETHING'S WRONG
+  Double-click "Diagnose system-wide engine.cmd" and send the developer
+  what it shows. It changes nothing.
+
+  The scripts also run from an Administrator PowerShell in this folder:
+       powershell -ExecutionPolicy Bypass -File .\install-engine.ps1
+  (install-engine.ps1 -NoChain switches a misbehaving driver effect off
+  while EQ Box is installed, instead of keeping it.)
 
 IF A DEVICE GOES SILENT
   Settings > System > Sound > (your device) > Audio enhancements: Off

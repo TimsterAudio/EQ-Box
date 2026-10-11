@@ -30,10 +30,14 @@ The code is a Cargo workspace:
 | `eq-core/src/preset.rs` | Parses and writes APO-format EQ presets. |
 | `eq-core/src/shared.rs` | Lock-free parameters (UI to audio), peak meters (audio to UI) and the analyser tap. |
 | `eq-core/src/engine_settings.rs` | The settings file (`%ProgramData%\EQ Box\engine.json`) the app writes and the Windows engine reads. Writes are atomic: a temporary file, then a rename. |
-| `eq-box-apo/src/apo.rs` | The Audio Processing Object: the COM class factory, format checks (32-bit float, in place), `LockForProcess` and the real-time `APOProcess`, which runs the same `Equalizer`. |
+| `eq-box-apo/src/apo.rs` | The engine's logic: format checks (32-bit float, in place), `LockForProcess` and the real-time `APOProcess`, which runs the same `Equalizer`. |
+| `eq-box-apo/src/com.rs` | The COM object Windows sees, laid out by hand so the audio engine can create it through COM aggregation (it always does), and the class factory. |
+| `eq-box-apo/src/chain.rs` | The driver's own endpoint effect, if the device had one: setup records its CLSID in the device's `FxProperties` under EQ Box's key, and the engine creates it and runs it after the EQ. |
+| `eq-box-apo/src/events.rs` | Start-up, stream starts and problems go to the Application event log (source "EQ Box"); details go to the debugger output only. |
 | `eq-box-apo/src/settings_watch.rs` | One thread per audio-engine process. It watches the settings file and stores changes into `Shared` for every engine instance. |
 | `eq-box-apo/examples/apo_harness.rs` | Loads the DLL through COM, as the Windows audio engine does, and checks the EQ on a test tone. CI runs it on Windows, and it also runs under Wine. |
-| `packaging/windows/*.ps1` | Test-build setup: install the engine on one output (with a backup), and remove it again. |
+| `packaging/windows/*.ps1` | Setup: install the engine on an output (with a backup), remove it from all of them, and a read-only diagnostic report. The `.cmd` files run them as administrator with a double-click, and the app's Install / Add / Remove keys start them the same way. |
+| `audio/engine_setup.rs` | The app's side of setup: whether the engine is installed and running (from the DLL and its status file), and starting the setup scripts. |
 | `analyzer.rs` | An 8192-point FFT with a Hann window, fast attack and slow release, read at any frequency span. |
 | `audio/mod.rs` | The backend list, device lists, `start()` and `Processor`, which meters, equalises and feeds the analyser. |
 | `audio/pipewire_sink.rs` | Two PipeWire streams in one link group: an `Audio/Sink` node called "EQ Box", and a playback stream to the chosen output. They're joined by a ring buffer, the same shape as `pw-loopback`. |

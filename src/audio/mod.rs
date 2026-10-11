@@ -2,6 +2,7 @@
 //! [`Processor`]; the UI only ever talks to [`Shared`].
 
 mod cpal_backend;
+pub mod engine_setup;
 #[cfg(target_os = "linux")]
 mod pipewire_sink;
 #[cfg(windows)]

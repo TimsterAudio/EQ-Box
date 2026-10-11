@@ -40,9 +40,11 @@ If you'd rather equalise a capture device, choose **PipeWire devices** or **ALSA
 
 EQ Box's engine can run inside Windows' own audio engine, so every app on an output is equalised with no extra software. The Windows download has a `system-wide-engine` folder:
 
-1. From an Administrator PowerShell in that folder, run `powershell -ExecutionPolicy Bypass -File .\install-engine.ps1`, then pick your output.
-2. In EQ Box, set **System** to **Windows (system-wide)** and press **Run / Stop**. Your settings go straight to the engine and stay set after EQ Box closes.
-3. `remove-engine.ps1` puts every device back exactly as it was.
+1. In EQ Box, set **System** to **Windows (system-wide)** and press **Install** (or double-click `Install system-wide engine.cmd`). Allow Windows' permission prompt, then pick your output.
+2. Press **Run / Stop**. Your settings go straight to the engine and stay set after EQ Box closes.
+3. **Remove** (or `Remove system-wide engine.cmd`) puts every device back exactly as it was.
+
+If the output already has its own effect from its driver, EQ Box keeps it and runs it after the EQ.
 
 Apps using exclusive mode or ASIO bypass it, as they do with other EQ software. See `system-wide-engine/README.txt` and [docs/WINDOWS_APO_PLAN.md](docs/WINDOWS_APO_PLAN.md).
 

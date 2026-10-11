@@ -4,6 +4,7 @@ use super::graph::{self, fmt_freq};
 use super::theme::*;
 use super::widgets::*;
 use crate::analyzer::Analyzer;
+use crate::audio::engine_setup::{self, EngineState, Setup};
 use crate::audio::{self, BackendInfo, DeviceLists, Running, StartRequest};
 use crate::dsp::*;
 use crate::shared::{analyzer_channel, Shared};
@@ -126,6 +127,12 @@ pub struct EqApp {
     touched: Option<(String, String, f64)>,
     notice: Option<(String, f64)>,
     peaks_db: [f32; 4],
+    /// The Windows system-wide engine, checked once a second while
+    /// "Windows (system-wide)" is chosen.
+    engine: EngineState,
+    engine_checked: f64,
+    /// A setup script waiting on Windows' permission prompt.
+    setup: Option<std::process::Child>,
 }
 
 impl EqApp {
@@ -162,6 +169,9 @@ impl EqApp {
             touched: None,
             notice: None,
             peaks_db: [-90.0; 4],
+            engine: EngineState::NotInstalled,
+            engine_checked: f64::NEG_INFINITY,
+            setup: None,
         };
         app.refresh_devices();
         if let Some(path) = std::env::args_os().nth(1) {
@@ -263,6 +273,47 @@ impl EqApp {
 
     fn notify(&mut self, msg: impl Into<String>) {
         self.notice = Some((msg.into(), now()));
+    }
+
+    fn is_win_engine(&self) -> bool {
+        self.s.backend.as_deref() == Some(audio::WINDOWS_ENGINE)
+    }
+
+    /// Keeps `engine` current while the Windows engine is chosen, and
+    /// reports on a setup script once Windows' permission prompt closes.
+    fn watch_engine(&mut self, ctx: &egui::Context) {
+        if let Some(child) = self.setup.as_mut() {
+            if let Some(result) = engine_setup::launch_result(child) {
+                self.setup = None;
+                match result {
+                    Ok(()) => self.notify("Setup is running in its own window"),
+                    Err(e) => self.notify(e),
+                }
+            }
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        if !self.is_win_engine() {
+            return;
+        }
+        let t = now();
+        if t - self.engine_checked >= 1.0 {
+            self.engine_checked = t;
+            self.engine = engine_setup::engine_state();
+        }
+        ctx.request_repaint_after(std::time::Duration::from_secs(1));
+    }
+
+    fn run_setup(&mut self, what: Setup) {
+        if self.setup.is_some() {
+            return;
+        }
+        match engine_setup::launch(what) {
+            Ok(child) => {
+                self.setup = Some(child);
+                self.notify("Windows will ask for permission");
+            }
+            Err(e) => self.notify(e),
+        }
     }
 
     // ------------------------------------------------------------ presets
@@ -381,6 +432,7 @@ impl eframe::App for EqApp {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(16));
         }
+        self.watch_engine(ui.ctx());
 
         // Keyboard shortcuts (not while a control has focus).
         let free = ui.memory(|m| m.focused().is_none());
@@ -546,6 +598,15 @@ impl EqApp {
             .sample_rate
             .load(std::sync::atomic::Ordering::Relaxed);
         let line2 = match (&self.running, &self.audio_error) {
+            (Some(r), _) if self.is_win_engine() => (
+                r.description.clone(),
+                match self.engine {
+                    EngineState::NotInstalled => "NO ENGINE".into(),
+                    EngineState::Idle => "ENGINE IDLE".into(),
+                    EngineState::Active if rate > 0 => format!("{rate} HZ"),
+                    EngineState::Active => "ENGINE ON".into(),
+                },
+            ),
             (Some(r), _) => (
                 r.description.clone(),
                 if rate > 0 {
@@ -920,6 +981,25 @@ impl EqApp {
                 56.0,
             );
         }
+        if is_win_engine {
+            // Setup for the system-wide engine, where the Buffer knob would be.
+            let install = if self.engine == EngineState::NotInstalled {
+                "Install"
+            } else {
+                "Add"
+            };
+            let r = Rect::from_min_size(Pos2::new(x0, ky - 6.0), Vec2::new(52.0, 18.0));
+            if key(ui, r, Id::new("engine-install"), K_CREAM, None, install, th).clicked() {
+                self.run_setup(Setup::Install);
+            }
+            if self.engine != EngineState::NotInstalled {
+                // Where Dropouts would be (the engine has none to count).
+                let r = Rect::from_min_size(Pos2::new(x0 + 174.0, ky - 6.0), Vec2::new(52.0, 18.0));
+                if key(ui, r, Id::new("engine-remove"), K_GREY, None, "Remove", th).clicked() {
+                    self.run_setup(Setup::Remove);
+                }
+            }
+        }
         let kr = Rect::from_min_size(Pos2::new(x0 + 78.0, ky - 6.0), Vec2::new(52.0, 18.0));
         if key(ui, kr, Id::new("rescan"), K_GREY, None, "Rescan", th).clicked() {
             self.refresh_devices();
@@ -932,7 +1012,7 @@ impl EqApp {
                 ),
             );
         }
-        {
+        if !is_win_engine {
             let p = ui.painter();
             let drops = self
                 .shared
@@ -951,9 +1031,14 @@ impl EqApp {
         // Help or error text
         let help = if let Some(e) = self.audio_error.as_ref().or(self.device_error.as_ref()) {
             (e.clone(), LED)
+        } else if is_win_engine && self.engine == EngineState::NotInstalled {
+            (
+                "EQ Box's engine isn't installed yet. Press Install, allow Windows' permission prompt, and pick your output in the window that opens. Every app on that output then goes through EQ Box, with no virtual cable.".to_string(),
+                th.legend_dim,
+            )
         } else if is_win_engine {
             (
-                "EQ Box's engine runs inside Windows and equalises every app on the outputs it's installed on (see install-engine.ps1). Run sends your settings to it, and they stay set after EQ Box closes. Use Bypass to switch the EQ off.".to_string(),
+                "EQ Box's engine runs inside Windows and equalises every app on the outputs it's installed on (Add puts it on another, Remove takes it off them all). Run sends your settings to it, and they stay set after EQ Box closes. Use Bypass to switch the EQ off.".to_string(),
                 th.legend_dim,
             )
         } else if is_pw_sink {

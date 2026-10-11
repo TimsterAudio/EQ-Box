@@ -13,6 +13,9 @@ $ModeDefault  = '{C18E2F7E-933D-4965-B7D1-1EEF228D2AF3}'   # AUDIO_SIGNALPROCESS
 # FxProperties value names (property keys)
 $PkeyEfx      = '{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},7'  # PKEY_FX_EndpointEffectClsid
 $PkeyEfxModes = '{d3993a3f-99c2-4402-b5ec-a92a0367664b},7'  # PKEY_EFX_ProcessingModes_Supported_For_Streaming
+# EQ Box's own: the driver's endpoint effect, which the engine runs after
+# the EQ. Never change it: installed systems use it (see chain.rs).
+$PkeyChained  = '{0febc01a-a301-491f-bbcd-17284a13cb61},1'
 
 # Properties value names
 $PkeyDeviceDesc    = '{a45c254e-df1c-4efd-8020-67d146a850e0},2'  # e.g. "Speakers"

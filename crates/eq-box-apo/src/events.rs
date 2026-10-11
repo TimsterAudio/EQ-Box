@@ -3,6 +3,10 @@
 //! runs with a restricted token that may not write files, but the
 //! Application log accepts write-restricted processes.
 //!
+//! Only start-up, stream starts and problems go to the event log, so it
+//! stays quiet in normal use; `Debug` messages go to the debugger output
+//! only (DebugView shows them).
+//!
 //! Never call this from `APOProcess`: it does system calls and allocates.
 
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
@@ -15,6 +19,8 @@ use windows_core::{w, HSTRING, PCWSTR};
 
 #[derive(Clone, Copy)]
 pub enum Level {
+    /// Debugger output only.
+    Debug,
     Info,
     Warning,
     Error,
@@ -26,6 +32,10 @@ pub fn log(level: Level, msg: &str) {
         std::process::id()
     ));
     let kind = match level {
+        Level::Debug => {
+            unsafe { OutputDebugStringW(&text) };
+            return;
+        }
         Level::Info => EVENTLOG_INFORMATION_TYPE,
         Level::Warning => EVENTLOG_WARNING_TYPE,
         Level::Error => EVENTLOG_ERROR_TYPE,
