@@ -1,6 +1,6 @@
 # Plan: system-wide EQ on Windows (EQ Box APO)
 
-**Status:** steps 1 and 2 are built, along with the core of step 3: the app mode and live settings. Waiting on the first test on a real Windows machine.
+**Status:** steps 1 and 2 are built, along with the core of step 3: the app mode and live settings. Confirmed working on Windows 11 (build 26200) with a USB DAC: the engine runs inside `audiodg.exe` and the EQ is heard on every app. Note that the audio engine creates APOs through COM aggregation, which `com.rs` supports.
 
 ## Goal
 
