@@ -6,6 +6,7 @@ Ideas and planned work for EQ Box (EQ-10) and SP-10. Tick items off (`[x]`) when
 
 The aim: someone who has never heard of an equaliser can install and use EQ-10 and SP-10 on their own. On Windows that means download, double-click, **Yes**, check the speakers are ticked, **OK**, with nothing to type and no technical windows. In rough order of value:
 
+- [ ] **Know about TAW Equaliser's engine.** EQ Box and TAW Equaliser register the same Windows engine, so installing one replaces the other. Today only the README warns. EQ Box's Install should spot a TAW Equaliser engine (as TAW Equaliser's already spots EQ Box's), say in plain words which program it belongs to, and offer to remove it first or leave things as they are, never replacing it silently. The display should show when the running engine is TAW Equaliser's rather than EQ Box's.
 - [ ] **A setup window instead of PowerShell.** A small setup helper (`eq-box-setup.exe`, in Rust, doing what the scripts do today) runs with the one Windows permission prompt, and EQ Box shows its own panel-styled window:
   - "Which speakers should EQ Box work on?", listing only connected outputs by their friendly names, with the one playing now already ticked.
   - A **Play test sound** button by each, so nobody has to know which name is which.
