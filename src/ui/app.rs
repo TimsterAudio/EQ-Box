@@ -324,6 +324,11 @@ impl EqApp {
         if self.setup.is_some() {
             return;
         }
+        if self.engine == EngineState::TawEqualiser {
+            // It's TAW Equaliser's engine (the same CLSID): leave it alone.
+            self.notify("TAW Equaliser's engine is installed; remove it in TAW Equaliser first");
+            return;
+        }
         match engine_setup::launch(what) {
             Ok(child) => {
                 self.setup = Some(child);
@@ -623,6 +628,7 @@ impl EqApp {
                     EngineState::Active if rate > 0 => format!("{rate} HZ"),
                     EngineState::Active => "ENGINE ON".into(),
                     EngineState::Outdated => "UPDATE ENGINE".into(),
+                    EngineState::TawEqualiser => "TAW EQ ENGINE".into(),
                 },
             ),
             (Some(r), _) => (
@@ -1027,7 +1033,7 @@ impl EqApp {
                 56.0,
             );
         }
-        if is_win_engine {
+        if is_win_engine && self.engine != EngineState::TawEqualiser {
             // Setup for the system-wide engine, where the Buffer knob would be.
             let install = match self.engine {
                 EngineState::NotInstalled => "Install",
@@ -1077,6 +1083,11 @@ impl EqApp {
         // Help or error text
         let help = if let Some(e) = self.audio_error.as_ref().or(self.device_error.as_ref()) {
             (e.clone(), LED)
+        } else if is_win_engine && self.engine == EngineState::TawEqualiser {
+            (
+                "TAW Equaliser's system-wide engine is installed. It shares EQ Box's engine, so EQ Box can't use or change it. To use EQ Box's engine instead, press Remove in TAW Equaliser, then Install here. Or choose another System (WASAPI or ASIO).".to_string(),
+                LED,
+            )
         } else if is_win_engine && self.engine == EngineState::NotInstalled {
             (
                 "EQ Box's engine isn't installed yet. Press Install, allow Windows' permission prompt, and pick your output in the window that opens. Every app on that output then goes through EQ Box, with no virtual cable.".to_string(),

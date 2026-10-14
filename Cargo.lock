@@ -786,7 +786,7 @@ checksum = "773fa9c96dd0dbef887e39d0ed6177f141cce4d68e6041df77570aa3702dfa13"
 
 [[package]]
 name = "eq-box"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "cpal",
  "eframe",
@@ -801,7 +801,7 @@ dependencies = [
 
 [[package]]
 name = "eq-box-apo"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "eq-core",
  "windows",
@@ -810,7 +810,7 @@ dependencies = [
 
 [[package]]
 name = "eq-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "rtrb",
  "serde",

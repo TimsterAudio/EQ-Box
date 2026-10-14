@@ -20,6 +20,9 @@ pub enum EngineState {
     /// everything the panel sends (such as the cut filters). Installing
     /// again updates it.
     Outdated,
+    /// TAW Equaliser's engine is installed. It shares EQ Box's CLSID, so
+    /// EQ Box mustn't install over it or remove it.
+    TawEqualiser,
 }
 
 /// The engine's report (`engine-status.txt`) is rewritten every second
@@ -30,13 +33,21 @@ pub fn engine_state() -> EngineState {
     if !cfg!(windows) {
         return EngineState::NotInstalled;
     }
-    let dll = std::env::var_os("ProgramFiles").map(|p| {
-        std::path::PathBuf::from(p)
-            .join("EQ Box")
-            .join("eq_box_apo.dll")
+    let program_files = std::env::var_os("ProgramFiles").map(std::path::PathBuf::from);
+    let dll = program_files
+        .as_ref()
+        .map(|p| p.join("EQ Box").join("eq_box_apo.dll"));
+    let taw = program_files.as_ref().map(|p| {
+        p.join("Timster's Audio Works")
+            .join("Equaliser")
+            .join("taw_equaliser_apo.dll")
     });
     if !dll.is_some_and(|p| p.exists()) {
-        return EngineState::NotInstalled;
+        return if taw.is_some_and(|p| p.exists()) {
+            EngineState::TawEqualiser
+        } else {
+            EngineState::NotInstalled
+        };
     }
     let status = eq_core::engine_settings::default_path().with_file_name("engine-status.txt");
     let fresh = std::fs::metadata(&status)

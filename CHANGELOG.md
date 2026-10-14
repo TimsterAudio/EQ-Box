@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.2.1 – 2026-10-14
+
+- Windows: EQ Box no longer installs over, or removes, TAW Equaliser's system-wide engine. The two share one engine, so when TAW Equaliser's is installed EQ Box shows TAW EQ ENGINE, hides Install and Remove, and explains how to switch; its install and remove scripts stop with the same message and change nothing.
 - EQ Box has its own repository again (TimsterAudio/EQ-Box), as the Box family's equaliser with Drone Box's panel, restored from 0.2.0 with its history. TAW Equaliser (TimsterAudio/TAW-Equaliser) continues from it for the hi-fi family.
 - README: a note that EQ Box's and TAW Equaliser's Windows engines are the same component, so only one should be installed.
 

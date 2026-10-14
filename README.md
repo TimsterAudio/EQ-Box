@@ -1,6 +1,6 @@
 # EQ Box
 
-**Timster's Audio Works – EQ Box v0.2.0**: a native ten-band parametric equaliser for Windows and Linux, with the same Jupiter-style panel as Drone Box.
+**Timster's Audio Works – EQ Box v0.2.1**: a native ten-band parametric equaliser for Windows and Linux, with the same Jupiter-style panel as Drone Box.
 
 ![EQ Box with an AutoEQ preset loaded and pink noise playing](docs/screenshot.png)
 
@@ -8,7 +8,7 @@ It's a real desktop program written in Rust (egui for the panel). It isn't an HT
 
 **EQ Box is the equaliser of the Box family**, the instruments with Drone Box's panel (Drone Box, Drum Box). Its hi-fi sibling, **TAW Equaliser** (TimsterAudio/TAW-Equaliser), grew out of EQ Box at 0.3.0 and has the newer TAW look; the two share the same DSP and Windows engine.
 
-> **Windows: install the system-wide engine from only one of them.** EQ Box and TAW Equaliser use the same engine (the same registered component), so installing one engine replaces the other's. TAW Equaliser's installer offers to remove an EQ Box engine first; EQ Box's doesn't know about TAW Equaliser's, so remove TAW Equaliser's engine (its *Remove* button) before installing EQ Box's. WASAPI, ASIO and Linux don't touch the engine and can run side by side.
+> **Windows: install the system-wide engine from only one of them.** EQ Box and TAW Equaliser use the same engine (the same registered component), so installing one engine replaces the other's. TAW Equaliser's installer offers to remove an EQ Box engine first. From 0.2.1 EQ Box recognises TAW Equaliser's engine and leaves it alone (no Install or Remove while it's there); remove it in TAW Equaliser first if you want EQ Box's. WASAPI, ASIO and Linux don't touch the engine and can run side by side.
 
 ## Download
 

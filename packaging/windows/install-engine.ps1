@@ -44,6 +44,7 @@ if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProces
     exit $LASTEXITCODE
 }
 . (Join-Path $PSScriptRoot 'engine-common.ps1')
+Exit-IfTawEqualiser 'replace'
 
 Write-Host ''
 Write-Host 'EQ Box: install the system-wide engine (test build)' -ForegroundColor Cyan

@@ -5,6 +5,11 @@ $InstallDir   = Join-Path $env:ProgramFiles 'EQ Box'
 $BackupDir    = Join-Path $InstallDir 'backup'
 $SettingsDir  = Join-Path $env:ProgramData 'EQ Box'
 
+# TAW Equaliser grew out of EQ Box and registers the same engine CLSID, so
+# only one of the two engines can be installed. EQ Box leaves TAW
+# Equaliser's alone (its own installer removes an EQ Box engine first).
+$TawDll       = Join-Path $env:ProgramFiles "Timster's Audio Works\Equaliser\taw_equaliser_apo.dll"
+
 # Never change: installed systems point at this CLSID.
 $ClsidText    = '{0FEBC01A-A301-491F-BBCD-17284A13CB61}'
 $IidApoText   = '{FD7F2B29-24D0-4B5C-B177-592C39F9CA10}'   # IAudioProcessingObject
@@ -21,6 +26,32 @@ $PkeyChained  = '{0febc01a-a301-491f-bbcd-17284a13cb61},1'
 $PkeyDeviceDesc    = '{a45c254e-df1c-4efd-8020-67d146a850e0},2'  # e.g. "Speakers"
 $PkeyInterfaceName = '{b3f8fa53-0004-438e-9003-51a46e139bfc},6'  # e.g. "Realtek(R) Audio"
 $PkeyDisableSysFx  = '{1da5d803-d492-4edd-8c23-e0c0ffee7f0e},5'  # Audio enhancements off
+
+# True when TAW Equaliser's engine holds the shared CLSID: its DLL is
+# installed, or the CLSID is registered to a DLL outside EQ Box's folder.
+function Test-TawEqualiserEngine {
+    if (Test-Path -LiteralPath $TawDll) { return $true }
+    $com = "HKLM:\SOFTWARE\Classes\CLSID\$ClsidText\InprocServer32"
+    if (Test-Path -LiteralPath $com) {
+        $path = (Get-Item -LiteralPath $com).GetValue('', '')
+        if ($path -and ($path -notlike "$InstallDir\*")) { return $true }
+    }
+    return $false
+}
+
+function Exit-IfTawEqualiser([string]$What) {
+    if (Test-TawEqualiserEngine) {
+        Write-Host ''
+        Write-Host "TAW Equaliser's system-wide engine is installed." -ForegroundColor Yellow
+        Write-Host 'EQ Box and TAW Equaliser share one engine, so EQ Box will not'
+        Write-Host "$What it. To use EQ Box's engine instead, open TAW Equaliser,"
+        Write-Host 'press Remove (or run its "Remove system-wide engine" script),'
+        Write-Host 'then install EQ Box''s engine again.'
+        Write-Host ''
+        Write-Host 'Nothing was changed.'
+        exit 1
+    }
+}
 
 $RenderRoot = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render'
 
