@@ -6,6 +6,10 @@
 
 It's a real desktop program written in Rust (egui for the panel). It isn't an HTML page in a browser.
 
+**EQ Box is the equaliser of the Box family**, the instruments with Drone Box's panel (Drone Box, Drum Box). Its hi-fi sibling, **TAW Equaliser** (TimsterAudio/TAW-Equaliser), grew out of EQ Box at 0.3.0 and has the newer TAW look; the two share the same DSP and Windows engine.
+
+> **Windows: install the system-wide engine from only one of them.** EQ Box and TAW Equaliser use the same engine (the same registered component), so installing one engine replaces the other's. TAW Equaliser's installer offers to remove an EQ Box engine first; EQ Box's doesn't know about TAW Equaliser's, so remove TAW Equaliser's engine (its *Remove* button) before installing EQ Box's. WASAPI, ASIO and Linux don't touch the engine and can run side by side.
+
 ## Download
 
 Get the latest version from the [Releases page](https://github.com/TimsterAudio/EQ-Box/releases/latest):

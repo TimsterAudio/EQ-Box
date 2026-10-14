@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- EQ Box has its own repository again (TimsterAudio/EQ-Box), as the Box family's equaliser with Drone Box's panel, restored from 0.2.0 with its history. TAW Equaliser (TimsterAudio/TAW-Equaliser) continues from it for the hi-fi family.
+- README: a note that EQ Box's and TAW Equaliser's Windows engines are the same component, so only one should be installed.
+
 ## 0.2.0 – 2026-10-11
 
 - Windows: a system-wide engine (test build). EQ Box's EQ runs inside Windows' own audio engine and equalises every app on the outputs you choose, with no virtual cable. Choose **Windows (system-wide)** under System and press **Install**.
